@@ -1,6 +1,8 @@
 package io.github.jozephzemambo.jobradar.ingest;
 
 import io.github.jozephzemambo.jobradar.config.JobRadarProperties;
+import io.github.jozephzemambo.jobradar.dedup.DedupResult;
+import io.github.jozephzemambo.jobradar.dedup.DedupService;
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
@@ -35,13 +37,15 @@ public class IngestService {
     private final Map<FetchMode, FetchStrategy> strategies;
     private final Map<String, Company> companiesByToken;
     private final PostingStore store;
+    private final DedupService dedupService;
     private final IngestRunRepository runs;
     private final Clock clock;
 
     public IngestService(SourceRegistry sources, List<FetchStrategy> strategies, PostingStore store,
-            IngestRunRepository runs, JobRadarProperties props, Clock clock) {
+            DedupService dedupService, IngestRunRepository runs, JobRadarProperties props, Clock clock) {
         this.sources = sources;
         this.store = store;
+        this.dedupService = dedupService;
         this.runs = runs;
         this.strategies = new EnumMap<>(FetchMode.class);
         for (FetchStrategy strategy : strategies) {
@@ -66,7 +70,7 @@ public class IngestService {
         List<FetchOutcome> outcomes = strategy.fetchAll(companies, this::fetchOne);
         Duration fetchTime = Duration.ofNanos(System.nanoTime() - startNanos);
 
-        // Persistence runs on this one thread after the fan-out: JDBC stays off the virtual threads (some drivers
+        // Persistence and dedup run on this one thread after the fan-out: JDBC stays off the virtual threads (some drivers
         // pin them on JDK 21), and each board commits in its own transaction.
         long persistStart = System.nanoTime();
         List<Posting> postings = new ArrayList<>();
@@ -83,6 +87,9 @@ public class IngestService {
                         failure.errorType(), failure.message()));
             }
         }
+        DedupResult dedup = dedupService.refresh();
+        IngestReport.DedupCounts dedupCounts = new IngestReport.DedupCounts(dedup.candidates(),
+                dedup.count(DedupResult.Reason.EXACT_URL), dedup.count(DedupResult.Reason.FUZZY));
         Duration persistTime = Duration.ofNanos(System.nanoTime() - persistStart);
         Map<Ats, Integer> byAts = postings.stream()
                 .collect(Collectors.groupingBy(Posting::ats, () -> new EnumMap<>(Ats.class),
@@ -94,7 +101,7 @@ public class IngestService {
                 postings.size(), sync, fetchTime.toMillis(), persistTime.toMillis(), wallTime.toMillis()));
 
         IngestReport report = new IngestReport(run.getId(), startedAt, request.mode(), companies.size(), succeeded,
-                List.copyOf(failures), postings.size(), byAts, sync, fetchTime, persistTime, wallTime);
+                List.copyOf(failures), postings.size(), byAts, sync, dedupCounts, fetchTime, persistTime, wallTime);
         log.info("Ingest {}: {} boards, {} failed, {} postings ({}) in {} ms", request.mode(), companies.size(),
                 failures.size(), postings.size(), sync, wallTime.toMillis());
         return report;

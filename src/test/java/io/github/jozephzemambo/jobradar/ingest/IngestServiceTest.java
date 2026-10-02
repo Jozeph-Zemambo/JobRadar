@@ -10,6 +10,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.github.jozephzemambo.jobradar.config.JobRadarProperties;
+import io.github.jozephzemambo.jobradar.dedup.DedupResult;
+import io.github.jozephzemambo.jobradar.dedup.DedupService;
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
@@ -43,6 +45,7 @@ class IngestServiceTest {
     private final JobSource ashby = mock(JobSource.class);
     private final PostingStore store = mock(PostingStore.class);
     private final IngestRunRepository runs = mock(IngestRunRepository.class);
+    private final DedupService dedupService = mock(DedupService.class);
     private IngestService service;
 
     @BeforeEach
@@ -53,11 +56,12 @@ class IngestServiceTest {
         when(store.syncBoard(any(), any(), any()))
                 .thenAnswer(inv -> new SyncCounts(inv.<List<?>>getArgument(1).size(), 0, 0, 0));
         when(runs.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        JobRadarProperties props = new JobRadarProperties(null, null, List.of(stripe, plaid, ramp));
+        when(dedupService.refresh()).thenReturn(new DedupResult(3, List.of(), 0));
+        JobRadarProperties props = new JobRadarProperties(null, null, null, List.of(stripe, plaid, ramp));
         service = new IngestService(new SourceRegistry(List.of(greenhouse, lever, ashby)),
                 List.of(new SequentialFetchStrategy(), new PlatformPoolFetchStrategy(2),
                         new VirtualThreadFetchStrategy()),
-                store, runs, props, Clock.fixed(NOW, ZoneOffset.UTC));
+                store, dedupService, runs, props, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @ParameterizedTest
@@ -86,6 +90,7 @@ class IngestServiceTest {
         verify(store, never()).syncBoard(eq(plaid), any(), any());
         verify(store).syncBoard(stripe, List.of(posting(Ats.GREENHOUSE, "1"), posting(Ats.GREENHOUSE, "2")), NOW);
         verify(runs).save(any(IngestRunEntity.class));
+        assertThat(report.dedup()).isEqualTo(new IngestReport.DedupCounts(3, 0, 0));
     }
 
     @Test

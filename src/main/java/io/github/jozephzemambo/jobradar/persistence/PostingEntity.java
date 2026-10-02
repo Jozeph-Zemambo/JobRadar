@@ -1,5 +1,6 @@
 package io.github.jozephzemambo.jobradar.persistence;
 
+import io.github.jozephzemambo.jobradar.dedup.DedupResult;
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Posting;
 import io.github.jozephzemambo.jobradar.domain.WorkplaceType;
@@ -88,6 +89,14 @@ public class PostingEntity {
 
     @Column(name = "closed_at")
     private Instant closedAt;
+
+    /** Id of the posting this one duplicates; a plain column, not an association, so nothing loads eagerly. */
+    @Column(name = "duplicate_of_id")
+    private Long duplicateOfId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "dedup_reason", length = 20)
+    private DedupResult.Reason dedupReason;
 
     protected PostingEntity() {
         // for JPA
@@ -214,6 +223,14 @@ public class PostingEntity {
 
     public Instant getClosedAt() {
         return closedAt;
+    }
+
+    public Long getDuplicateOfId() {
+        return duplicateOfId;
+    }
+
+    public DedupResult.Reason getDedupReason() {
+        return dedupReason;
     }
 
     public boolean isOpen() {

@@ -14,6 +14,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record JobRadarProperties(
         @DefaultValue Sources sources,
         @DefaultValue Http http,
+        @DefaultValue Dedup dedup,
         List<Company> companies) {
 
     public JobRadarProperties {
@@ -41,5 +42,9 @@ public record JobRadarProperties(
             @DefaultValue("500ms") Duration initialBackoff,
             @DefaultValue("8s") Duration maxBackoff,
             @DefaultValue("16") int platformPoolSize) {
+    }
+
+    /** Fuzzy-dedup threshold on title token similarity, in (0, 1]. See bench/dedup for how it was chosen. */
+    public record Dedup(@DefaultValue("0.8") double titleSimilarityThreshold) {
     }
 }
