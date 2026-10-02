@@ -2,6 +2,7 @@ package io.github.jozephzemambo.jobradar.scoring;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -12,6 +13,9 @@ import java.util.Set;
 /**
  * Known skills and the ways postings spell them ("k8s" is Kubernetes, "Postgres" is PostgreSQL).
  * Built from {@code skills.yml}; immutable after construction, so it is safe to share across threads.
+ *
+ * <p>Aliases are indexed by their first token (lowercase). Matching walks the posting's tokens once and, at each
+ * token, only checks the few aliases that start with it.
  */
 public final class SkillDictionary {
 
@@ -31,49 +35,67 @@ public final class SkillDictionary {
         }
     }
 
-    private record Alias(String phrase, boolean caseSensitive) {
+    /** One spelling of one skill, as tokens. */
+    private record Alias(int skill, String[] tokens, boolean caseSensitive) {
     }
 
+    private final List<Skill> skills;
     private final Map<String, Skill> byName;
-    private final Map<String, List<Alias>> aliasesByName;
+    private final Map<String, List<Alias>> byFirstToken;
 
     public SkillDictionary(List<Skill> skills) {
+        this.skills = List.copyOf(skills);
         Map<String, Skill> names = new LinkedHashMap<>();
-        Map<String, List<Alias>> aliases = new LinkedHashMap<>();
-        for (Skill skill : skills) {
+        Map<String, List<Alias>> index = new HashMap<>();
+        for (int s = 0; s < this.skills.size(); s++) {
+            Skill skill = this.skills.get(s);
             if (names.putIfAbsent(skill.name().toLowerCase(Locale.ROOT), skill) != null) {
                 throw new IllegalArgumentException("Duplicate skill: " + skill.name());
             }
-            List<Alias> forSkill = new ArrayList<>();
             Set<String> insensitive = new LinkedHashSet<>();
             if (skill.caseSensitiveAliases().isEmpty()) {
                 insensitive.add(skill.name());
             }
             insensitive.addAll(skill.aliases());
             for (String alias : insensitive) {
-                forSkill.add(new Alias(TextTokens.normalizePhrase(alias, false), false));
+                add(index, new Alias(s, TextTokens.phraseTokens(alias, false), false));
             }
             for (String alias : skill.caseSensitiveAliases()) {
-                forSkill.add(new Alias(TextTokens.normalizePhrase(alias, true), true));
+                add(index, new Alias(s, TextTokens.phraseTokens(alias, true), true));
             }
-            aliases.put(skill.name(), List.copyOf(forSkill));
         }
         this.byName = Collections.unmodifiableMap(names);
-        this.aliasesByName = Collections.unmodifiableMap(aliases);
+        this.byFirstToken = Collections.unmodifiableMap(index);
+    }
+
+    private static void add(Map<String, List<Alias>> index, Alias alias) {
+        if (alias.tokens().length == 0) {
+            return;
+        }
+        index.computeIfAbsent(alias.tokens()[0].toLowerCase(Locale.ROOT), k -> new ArrayList<>()).add(alias);
     }
 
     /** Canonical names of every skill mentioned in {@code text}, in dictionary order. */
     public List<String> skillsIn(TextTokens text) {
-        List<String> found = new ArrayList<>();
-        for (Map.Entry<String, List<Alias>> entry : aliasesByName.entrySet()) {
-            for (Alias alias : entry.getValue()) {
-                if (text.contains(alias.phrase(), alias.caseSensitive())) {
-                    found.add(entry.getKey());
-                    break;
+        boolean[] found = new boolean[skills.size()];
+        for (int i = 0; i < text.size(); i++) {
+            List<Alias> candidates = byFirstToken.get(text.lower(i));
+            if (candidates == null) {
+                continue;
+            }
+            for (Alias alias : candidates) {
+                if (!found[alias.skill()] && text.matchesAt(i, alias.tokens(), alias.caseSensitive())) {
+                    found[alias.skill()] = true;
                 }
             }
         }
-        return found;
+        List<String> names = new ArrayList<>();
+        for (int s = 0; s < found.length; s++) {
+            if (found[s]) {
+                names.add(skills.get(s).name());
+            }
+        }
+        return names;
     }
 
     /** Canonical name for a configured skill name in any case, or null if unknown. */

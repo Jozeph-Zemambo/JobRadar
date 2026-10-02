@@ -114,6 +114,18 @@ class KeywordScorerTest {
     }
 
     @Test
+    void textTokensPhraseLookup() {
+        TextTokens text = TextTokens.of("We run CI/CD on k8s. Go-to-market? No: Go services.");
+        assertThat(text.contains("ci/cd", false)).isTrue();
+        assertThat(text.contains("Go", true)).isTrue();
+        assertThat(text.contains("go-to-market", false)).isTrue();
+        assertThat(text.contains("kubernetes", false)).isFalse();
+        assertThat(text.contains("--", false)).as("empty phrase").isFalse();
+        assertThat(text.matchesAt(text.size() - 1, new String[] {"services", "extra"}, false)).isFalse();
+        assertThat(TextTokens.of(null).size()).isZero();
+    }
+
+    @Test
     void profileDefaults() {
         Profile empty = new Profile(" ", null, null, null);
         assertThat(empty.name()).isEqualTo("default");

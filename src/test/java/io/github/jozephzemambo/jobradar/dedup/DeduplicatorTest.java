@@ -15,7 +15,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class DeduplicatorTest {
 
-    private final Deduplicator dedup = new Deduplicator(new TitleTokenJaccard(), 0.8);
+    private final Deduplicator dedup = new Deduplicator(0.8);
     private final AtomicLong ids = new AtomicLong();
 
     @Test
@@ -102,7 +102,7 @@ class DeduplicatorTest {
     void clusteringIsNotTransitive() {
         // A~B (0.75) and B~C (0.8) at threshold 0.7, but A~C is only 0.6: C must not be chained onto A.
         // (No level words in these titles, so only similarity decides.)
-        Deduplicator loose = new Deduplicator(new TitleTokenJaccard(), 0.7);
+        Deduplicator loose = new Deduplicator(0.7);
         DedupCandidate a = c("Co", "alpha beta gamma", "Paris", null);
         DedupCandidate b = c("Co", "alpha beta gamma delta", "Paris", null);
         DedupCandidate cc = c("Co", "alpha beta gamma delta epsilon", "Paris", null);
@@ -141,8 +141,8 @@ class DeduplicatorTest {
 
     @Test
     void thresholdMustBeAProbability() {
-        assertThatThrownBy(() -> new Deduplicator(new TitleTokenJaccard(), 0)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new Deduplicator(new TitleTokenJaccard(), 1.5)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new Deduplicator(0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new Deduplicator(1.5)).isInstanceOf(IllegalArgumentException.class);
         assertThat(dedup.threshold()).isEqualTo(0.8);
     }
 

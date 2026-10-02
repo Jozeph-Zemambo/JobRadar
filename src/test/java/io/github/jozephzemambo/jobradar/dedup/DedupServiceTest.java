@@ -36,7 +36,7 @@ class DedupServiceTest {
     static class Config {
         @Bean
         Deduplicator deduplicator() {
-            return new Deduplicator(new TitleTokenJaccard(), 0.8);
+            return new Deduplicator(0.8);
         }
     }
 

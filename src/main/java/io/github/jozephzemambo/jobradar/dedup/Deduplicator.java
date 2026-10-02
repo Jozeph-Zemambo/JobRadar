@@ -4,12 +4,14 @@ import io.github.jozephzemambo.jobradar.config.JobRadarProperties;
 import io.github.jozephzemambo.jobradar.normalize.LocationNormalizer;
 import io.github.jozephzemambo.jobradar.normalize.TitleNormalizer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -20,14 +22,18 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li><b>Exact:</b> identical canonical URL.</li>
  *   <li><b>Fuzzy:</b> within one company (blocking keeps this from being all-pairs over every posting), the title
- *   similarity is at least the threshold, the level words agree ("Senior" vs none, "II" vs "III"), both postings
- *   have a location and the location sets overlap, and the departments don't conflict. Location is essential:
- *   Palantir lists "Deployment Strategist" in 11 cities, and those are 11 real openings.</li>
+ *   token similarity is at least the threshold, the level words agree ("Senior" vs none, "II" vs "III"), both
+ *   postings have a location and the location sets overlap, and the departments don't conflict. Location is
+ *   essential: Palantir lists "Deployment Strategist" in 11 cities, and those are 11 real openings.</li>
  * </ol>
  *
  * <p>Clustering is leader-based rather than transitive: each posting is compared only to the canonical postings
  * of its block, so A~B and B~C can never chain A and C together unless A~C directly. The earliest-stored posting
  * (lowest id, then ATS key) is the canonical one, which keeps the choice stable from one run to the next.
+ *
+ * <p>Every candidate is {@linkplain Prepared prepared} once (tokens, level words, location keys) before any
+ * comparison, so the O(n x leaders) inner loop only does set lookups. JFR showed the earlier version spending
+ * 63% of ingest CPU re-tokenizing the same titles with regexes inside that loop.
  */
 @Component
 public class Deduplicator {
@@ -37,60 +43,71 @@ public class Deduplicator {
             .thenComparing(c -> c.key().ats())
             .thenComparing(c -> c.key().externalId());
 
-    private final StringSimilarity titleSimilarity;
     private final double threshold;
 
     @Autowired
-    public Deduplicator(StringSimilarity titleSimilarity, JobRadarProperties props) {
-        this(titleSimilarity, props.dedup().titleSimilarityThreshold());
+    public Deduplicator(JobRadarProperties props) {
+        this(props.dedup().titleSimilarityThreshold());
     }
 
-    public Deduplicator(StringSimilarity titleSimilarity, double threshold) {
+    public Deduplicator(double threshold) {
         if (threshold <= 0 || threshold > 1) {
             throw new IllegalArgumentException("threshold must be in (0, 1]");
         }
-        this.titleSimilarity = titleSimilarity;
         this.threshold = threshold;
     }
 
+    /** A candidate with everything the fuzzy rule compares computed once. */
+    record Prepared(DedupCandidate candidate, String company, Set<String> titleTokens, Set<String> levels,
+            Set<String> locationKeys, String department) {
+
+        static Prepared of(DedupCandidate c) {
+            String department = c.department() == null || c.department().isBlank()
+                    ? null
+                    : c.department().strip().toLowerCase(Locale.ROOT);
+            return new Prepared(c, c.company().strip().toLowerCase(Locale.ROOT), TitleNormalizer.tokens(c.title()),
+                    TitleNormalizer.levelTokens(c.title()), LocationNormalizer.keys(c.locations()), department);
+        }
+    }
+
     public DedupResult dedupe(List<DedupCandidate> candidates) {
-        List<DedupCandidate> sorted = candidates.stream().sorted(CANONICAL_FIRST).toList();
+        List<Prepared> sorted = candidates.stream().sorted(CANONICAL_FIRST).map(Prepared::of).toList();
         List<DedupResult.Duplicate> duplicates = new ArrayList<>();
 
         // Pass 1: exact canonical URL.
-        Map<String, DedupCandidate> firstByUrl = new LinkedHashMap<>();
-        List<DedupCandidate> survivors = new ArrayList<>();
-        for (DedupCandidate candidate : sorted) {
-            DedupCandidate first = firstByUrl.putIfAbsent(candidate.canonicalUrl(), candidate);
+        Map<String, Prepared> firstByUrl = new LinkedHashMap<>();
+        List<Prepared> survivors = new ArrayList<>();
+        for (Prepared p : sorted) {
+            Prepared first = firstByUrl.putIfAbsent(p.candidate().canonicalUrl(), p);
             if (first == null) {
-                survivors.add(candidate);
+                survivors.add(p);
             } else {
-                duplicates.add(new DedupResult.Duplicate(candidate, first, DedupResult.Reason.EXACT_URL,
-                        titleSimilarity.similarity(candidate.title(), first.title())));
+                duplicates.add(new DedupResult.Duplicate(p.candidate(), first.candidate(), DedupResult.Reason.EXACT_URL,
+                        TitleTokenJaccard.similarity(p.titleTokens(), first.titleTokens())));
             }
         }
 
         // Pass 2: fuzzy, blocked by company, leader clustering.
-        Map<String, List<DedupCandidate>> blocks = survivors.stream().collect(Collectors.groupingBy(
-                c -> c.company().strip().toLowerCase(Locale.ROOT), LinkedHashMap::new, Collectors.toList()));
+        Map<String, List<Prepared>> blocks = survivors.stream()
+                .collect(Collectors.groupingBy(Prepared::company, LinkedHashMap::new, Collectors.toList()));
         long pairs = 0;
-        for (List<DedupCandidate> block : blocks.values()) {
-            List<DedupCandidate> leaders = new ArrayList<>();
-            for (DedupCandidate candidate : block) {
-                DedupCandidate match = null;
+        for (List<Prepared> block : blocks.values()) {
+            List<Prepared> leaders = new ArrayList<>();
+            for (Prepared p : block) {
+                Prepared match = null;
                 double matchSimilarity = 0;
-                for (DedupCandidate leader : leaders) {
+                for (Prepared leader : leaders) {
                     pairs++;
-                    double similarity = titleSimilarity.similarity(candidate.title(), leader.title());
-                    if (similarity > matchSimilarity && isMatch(candidate, leader, similarity)) {
+                    double similarity = TitleTokenJaccard.similarity(p.titleTokens(), leader.titleTokens());
+                    if (similarity > matchSimilarity && isMatch(p, leader, similarity)) {
                         match = leader;
                         matchSimilarity = similarity;
                     }
                 }
                 if (match == null) {
-                    leaders.add(candidate);
+                    leaders.add(p);
                 } else {
-                    duplicates.add(new DedupResult.Duplicate(candidate, match, DedupResult.Reason.FUZZY,
+                    duplicates.add(new DedupResult.Duplicate(p.candidate(), match.candidate(), DedupResult.Reason.FUZZY,
                             matchSimilarity));
                 }
             }
@@ -100,29 +117,17 @@ public class Deduplicator {
 
     /** The fuzzy rule for one pair, exposed so the evaluation harness scores exactly what production does. */
     public boolean isFuzzyMatch(DedupCandidate a, DedupCandidate b) {
-        if (!a.company().strip().equalsIgnoreCase(b.company().strip())) {
-            return false;
-        }
-        return isMatch(a, b, titleSimilarity.similarity(a.title(), b.title()));
+        Prepared pa = Prepared.of(a);
+        Prepared pb = Prepared.of(b);
+        return pa.company().equals(pb.company())
+                && isMatch(pa, pb, TitleTokenJaccard.similarity(pa.titleTokens(), pb.titleTokens()));
     }
 
-    public double titleSimilarity(DedupCandidate a, DedupCandidate b) {
-        return titleSimilarity.similarity(a.title(), b.title());
-    }
-
-    private boolean isMatch(DedupCandidate a, DedupCandidate b, double similarity) {
+    private boolean isMatch(Prepared a, Prepared b, double similarity) {
         return similarity >= threshold
-                && TitleNormalizer.levelTokens(a.title()).equals(TitleNormalizer.levelTokens(b.title()))
-                && LocationNormalizer.overlaps(a.locations(), b.locations())
-                && departmentsCompatible(a.department(), b.department());
-    }
-
-    /** Unknown department is compatible with anything; two known departments must agree. */
-    private static boolean departmentsCompatible(String a, String b) {
-        if (a == null || a.isBlank() || b == null || b.isBlank()) {
-            return true;
-        }
-        return Objects.equals(a.strip().toLowerCase(Locale.ROOT), b.strip().toLowerCase(Locale.ROOT));
+                && a.levels().equals(b.levels())
+                && !Collections.disjoint(a.locationKeys(), b.locationKeys())
+                && (a.department() == null || b.department() == null || Objects.equals(a.department(), b.department()));
     }
 
     public double threshold() {

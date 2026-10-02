@@ -8,8 +8,6 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class TitleTokenJaccardTest {
 
-    private final TitleTokenJaccard jaccard = new TitleTokenJaccard();
-
     @ParameterizedTest(name = "\"{0}\" vs \"{1}\" = {2}")
     @CsvSource(delimiter = '|', textBlock = """
             Backend Engineer                   | Engineer, Backend                 | 1.0
@@ -20,7 +18,7 @@ class TitleTokenJaccardTest {
             '--'                               | '  '                              | 1.0
             """)
     void similarity(String a, String b, double expected) {
-        assertThat(jaccard.similarity(a, b)).isCloseTo(expected, within(1e-4));
-        assertThat(jaccard.similarity(b, a)).as("symmetric").isCloseTo(expected, within(1e-4));
+        assertThat(TitleTokenJaccard.similarity(a, b)).isCloseTo(expected, within(1e-4));
+        assertThat(TitleTokenJaccard.similarity(b, a)).as("symmetric").isCloseTo(expected, within(1e-4));
     }
 }

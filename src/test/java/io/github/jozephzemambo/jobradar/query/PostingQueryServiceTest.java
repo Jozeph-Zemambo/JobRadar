@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.jozephzemambo.jobradar.config.JobRadarProperties;
 import io.github.jozephzemambo.jobradar.dedup.DedupService;
 import io.github.jozephzemambo.jobradar.dedup.Deduplicator;
-import io.github.jozephzemambo.jobradar.dedup.TitleTokenJaccard;
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
@@ -45,7 +44,7 @@ class PostingQueryServiceTest {
     static class Config {
         @Bean
         Deduplicator deduplicator() {
-            return new Deduplicator(new TitleTokenJaccard(), 0.8);
+            return new Deduplicator(0.8);
         }
 
         @Bean
