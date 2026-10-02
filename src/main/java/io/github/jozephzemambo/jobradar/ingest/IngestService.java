@@ -10,6 +10,9 @@ import io.github.jozephzemambo.jobradar.persistence.IngestRunEntity;
 import io.github.jozephzemambo.jobradar.persistence.IngestRunRepository;
 import io.github.jozephzemambo.jobradar.persistence.PostingStore;
 import io.github.jozephzemambo.jobradar.persistence.SyncCounts;
+import io.github.jozephzemambo.jobradar.scoring.Profile;
+import io.github.jozephzemambo.jobradar.scoring.ScoredPosting;
+import io.github.jozephzemambo.jobradar.scoring.Scorer;
 import io.github.jozephzemambo.jobradar.source.SourceRegistry;
 import java.time.Clock;
 import java.time.Duration;
@@ -38,14 +41,19 @@ public class IngestService {
     private final Map<String, Company> companiesByToken;
     private final PostingStore store;
     private final DedupService dedupService;
+    private final Scorer scorer;
+    private final Profile profile;
     private final IngestRunRepository runs;
     private final Clock clock;
 
     public IngestService(SourceRegistry sources, List<FetchStrategy> strategies, PostingStore store,
-            DedupService dedupService, IngestRunRepository runs, JobRadarProperties props, Clock clock) {
+            DedupService dedupService, Scorer scorer, Profile profile, IngestRunRepository runs,
+            JobRadarProperties props, Clock clock) {
         this.sources = sources;
         this.store = store;
         this.dedupService = dedupService;
+        this.scorer = scorer;
+        this.profile = profile;
         this.runs = runs;
         this.strategies = new EnumMap<>(FetchMode.class);
         for (FetchStrategy strategy : strategies) {
@@ -70,7 +78,7 @@ public class IngestService {
         List<FetchOutcome> outcomes = strategy.fetchAll(companies, this::fetchOne);
         Duration fetchTime = Duration.ofNanos(System.nanoTime() - startNanos);
 
-        // Persistence and dedup run on this one thread after the fan-out: JDBC stays off the virtual threads (some drivers
+        // Scoring, persistence and dedup run on this one thread after the fan-out: JDBC stays off the virtual threads (some drivers
         // pin them on JDK 21), and each board commits in its own transaction.
         long persistStart = System.nanoTime();
         List<Posting> postings = new ArrayList<>();
@@ -80,7 +88,10 @@ public class IngestService {
             switch (outcome) {
                 case FetchOutcome.Success success -> {
                     postings.addAll(success.postings());
-                    sync = sync.plus(store.syncBoard(success.company(), success.postings(), startedAt));
+                    List<ScoredPosting> scored = success.postings().stream()
+                            .map(p -> new ScoredPosting(p, scorer.score(p, profile)))
+                            .toList();
+                    sync = sync.plus(store.syncBoard(success.company(), scored, startedAt));
                 }
                 case FetchOutcome.Failure failure -> failures.add(new IngestReport.CompanyFailure(
                         failure.company().name(), failure.company().boardToken(), failure.company().ats(),

@@ -19,6 +19,10 @@ import io.github.jozephzemambo.jobradar.persistence.IngestRunEntity;
 import io.github.jozephzemambo.jobradar.persistence.IngestRunRepository;
 import io.github.jozephzemambo.jobradar.persistence.PostingStore;
 import io.github.jozephzemambo.jobradar.persistence.SyncCounts;
+import io.github.jozephzemambo.jobradar.scoring.Profile;
+import io.github.jozephzemambo.jobradar.scoring.ScoreBreakdown;
+import io.github.jozephzemambo.jobradar.scoring.ScoredPosting;
+import io.github.jozephzemambo.jobradar.scoring.Scorer;
 import io.github.jozephzemambo.jobradar.source.BoardNotFoundException;
 import io.github.jozephzemambo.jobradar.source.JobSource;
 import io.github.jozephzemambo.jobradar.source.SourceRegistry;
@@ -46,6 +50,9 @@ class IngestServiceTest {
     private final PostingStore store = mock(PostingStore.class);
     private final IngestRunRepository runs = mock(IngestRunRepository.class);
     private final DedupService dedupService = mock(DedupService.class);
+    private final Profile profile = new Profile("p", List.of("Java"), List.of("engineer"), List.of());
+    private final Scorer scorer = (posting, prof) -> new ScoreBreakdown(0.5, 0.5, true, false, List.of(),
+            List.of(), List.of());
     private IngestService service;
 
     @BeforeEach
@@ -57,11 +64,11 @@ class IngestServiceTest {
                 .thenAnswer(inv -> new SyncCounts(inv.<List<?>>getArgument(1).size(), 0, 0, 0));
         when(runs.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(dedupService.refresh()).thenReturn(new DedupResult(3, List.of(), 0));
-        JobRadarProperties props = new JobRadarProperties(null, null, null, List.of(stripe, plaid, ramp));
+        JobRadarProperties props = new JobRadarProperties(null, null, null, List.of(stripe, plaid, ramp), null, null);
         service = new IngestService(new SourceRegistry(List.of(greenhouse, lever, ashby)),
                 List.of(new SequentialFetchStrategy(), new PlatformPoolFetchStrategy(2),
                         new VirtualThreadFetchStrategy()),
-                store, dedupService, runs, props, Clock.fixed(NOW, ZoneOffset.UTC));
+                store, dedupService, scorer, profile, runs, props, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @ParameterizedTest
@@ -88,7 +95,9 @@ class IngestServiceTest {
         assertThat(report.sync().created()).isEqualTo(3);
         // The failed board must not be synced: an empty list would wrongly close all its postings.
         verify(store, never()).syncBoard(eq(plaid), any(), any());
-        verify(store).syncBoard(stripe, List.of(posting(Ats.GREENHOUSE, "1"), posting(Ats.GREENHOUSE, "2")), NOW);
+        ScoreBreakdown half = scorer.score(null, profile);
+        verify(store).syncBoard(stripe, List.of(new ScoredPosting(posting(Ats.GREENHOUSE, "1"), half),
+                new ScoredPosting(posting(Ats.GREENHOUSE, "2"), half)), NOW);
         verify(runs).save(any(IngestRunEntity.class));
         assertThat(report.dedup()).isEqualTo(new IngestReport.DedupCounts(3, 0, 0));
     }

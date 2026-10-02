@@ -1,6 +1,8 @@
 package io.github.jozephzemambo.jobradar.config;
 
 import io.github.jozephzemambo.jobradar.domain.Company;
+import io.github.jozephzemambo.jobradar.scoring.Profile;
+import io.github.jozephzemambo.jobradar.scoring.SkillDictionary;
 import java.time.Duration;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -15,10 +17,14 @@ public record JobRadarProperties(
         @DefaultValue Sources sources,
         @DefaultValue Http http,
         @DefaultValue Dedup dedup,
-        List<Company> companies) {
+        List<Company> companies,
+        List<SkillDictionary.Skill> skills,
+        Profile profile) {
 
     public JobRadarProperties {
         companies = companies == null ? List.of() : List.copyOf(companies);
+        skills = skills == null ? List.of() : List.copyOf(skills);
+        profile = profile == null ? new Profile(null, null, null, null) : profile;
     }
 
     /** Base URLs per ATS. Overridden in tests and benchmarks to point at a local WireMock. */

@@ -5,9 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
+import io.github.jozephzemambo.jobradar.scoring.ScoredPosting;
 import io.github.jozephzemambo.jobradar.domain.WorkplaceType;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,7 +41,7 @@ class PostingStoreTest {
 
     @Test
     void firstSyncCreatesEverything() {
-        SyncCounts counts = store.syncBoard(palantir, List.of(posting("a", "Deployment Strategist"),
+        SyncCounts counts = store.syncBoard(palantir, scored(posting("a", "Deployment Strategist"),
                 posting("b", "Forward Deployed Engineer")), DAY_1);
 
         assertThat(counts).isEqualTo(new SyncCounts(2, 0, 0, 0));
@@ -54,10 +56,10 @@ class PostingStoreTest {
 
     @Test
     void resyncingTheSameListingIsIdempotent() {
-        store.syncBoard(palantir, List.of(posting("a", "Strategist")), DAY_1);
+        store.syncBoard(palantir, scored(posting("a", "Strategist")), DAY_1);
         flushAndClear();
 
-        SyncCounts counts = store.syncBoard(palantir, List.of(posting("a", "Strategist")), DAY_2);
+        SyncCounts counts = store.syncBoard(palantir, scored(posting("a", "Strategist")), DAY_2);
         flushAndClear();
 
         assertThat(counts).isEqualTo(new SyncCounts(0, 1, 0, 0));
@@ -69,15 +71,15 @@ class PostingStoreTest {
 
     @Test
     void postingMissingFromALaterListingIsClosedAndReopensIfItReturns() {
-        store.syncBoard(palantir, List.of(posting("a", "A"), posting("b", "B")), DAY_1);
+        store.syncBoard(palantir, scored(posting("a", "A"), posting("b", "B")), DAY_1);
         flushAndClear();
 
-        SyncCounts day2 = store.syncBoard(palantir, List.of(posting("a", "A")), DAY_2);
+        SyncCounts day2 = store.syncBoard(palantir, scored(posting("a", "A")), DAY_2);
         flushAndClear();
         assertThat(day2).isEqualTo(new SyncCounts(0, 1, 0, 1));
         assertThat(find("b").getClosedAt()).isEqualTo(DAY_2);
 
-        SyncCounts day3 = store.syncBoard(palantir, List.of(posting("a", "A"), posting("b", "B")), DAY_3);
+        SyncCounts day3 = store.syncBoard(palantir, scored(posting("a", "A"), posting("b", "B")), DAY_3);
         flushAndClear();
         assertThat(day3).isEqualTo(new SyncCounts(0, 1, 1, 0));
         assertThat(find("b").isOpen()).isTrue();
@@ -86,11 +88,11 @@ class PostingStoreTest {
 
     @Test
     void alreadyClosedPostingIsNotClosedAgain() {
-        store.syncBoard(palantir, List.of(posting("a", "A")), DAY_1);
-        store.syncBoard(palantir, List.of(), DAY_2);
+        store.syncBoard(palantir, scored(posting("a", "A")), DAY_1);
+        store.syncBoard(palantir, scored(), DAY_2);
         flushAndClear();
 
-        SyncCounts counts = store.syncBoard(palantir, List.of(), DAY_3);
+        SyncCounts counts = store.syncBoard(palantir, scored(), DAY_3);
 
         assertThat(counts.closed()).isZero();
         assertThat(find("a").getClosedAt()).isEqualTo(DAY_2);
@@ -99,11 +101,11 @@ class PostingStoreTest {
     @Test
     void otherBoardsAreUntouched() {
         Company spotify = new Company("Spotify", Ats.LEVER, "spotify");
-        store.syncBoard(palantir, List.of(posting("a", "A")), DAY_1);
-        store.syncBoard(spotify, List.of(posting("s", "S")), DAY_1);
+        store.syncBoard(palantir, scored(posting("a", "A")), DAY_1);
+        store.syncBoard(spotify, scored(posting("s", "S")), DAY_1);
         flushAndClear();
 
-        store.syncBoard(spotify, List.of(), DAY_2);
+        store.syncBoard(spotify, scored(), DAY_2);
         flushAndClear();
 
         assertThat(find("a").isOpen()).isTrue();
@@ -112,7 +114,7 @@ class PostingStoreTest {
 
     @Test
     void duplicateIdsInOneResponseAreStoredOnce() {
-        SyncCounts counts = store.syncBoard(palantir, List.of(posting("a", "A"), posting("a", "A again")), DAY_1);
+        SyncCounts counts = store.syncBoard(palantir, scored(posting("a", "A"), posting("a", "A again")), DAY_1);
 
         assertThat(counts.created()).isEqualTo(1);
         assertThat(find("a").getTitle()).isEqualTo("A");
@@ -120,7 +122,7 @@ class PostingStoreTest {
 
     @Test
     void entityEqualityIsById() {
-        store.syncBoard(palantir, List.of(posting("a", "A"), posting("b", "B")), DAY_1);
+        store.syncBoard(palantir, scored(posting("a", "A"), posting("b", "B")), DAY_1);
         flushAndClear();
         PostingEntity a1 = find("a");
         flushAndClear();
@@ -150,5 +152,9 @@ class PostingStoreTest {
                 WorkplaceType.HYBRID, "Business", "https://jobs.lever.co/palantir/" + id,
                 "https://jobs.lever.co/palantir/" + id, "Work with Java and SQL", DAY_1.minus(Duration.ofDays(400)),
                 null);
+    }
+
+    private static List<ScoredPosting> scored(Posting... postings) {
+        return Arrays.stream(postings).map(p -> new ScoredPosting(p, null)).toList();
     }
 }

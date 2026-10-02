@@ -1,0 +1,70 @@
+# Skill dictionary used for scoring and for skill-demand statistics.
+# name: canonical display name. aliases: case-insensitive spellings. case-sensitive-aliases: spellings that
+# only count with exact case, for skills whose names are also English words ("Go").
+jobradar:
+  skills:
+    # Languages
+    - { name: Java,        category: language, aliases: [java] }
+    - { name: Kotlin,      category: language }
+    - { name: Scala,       category: language }
+    - { name: Python,      category: language }
+    - { name: JavaScript,  category: language, aliases: [js, ecmascript] }
+    - { name: TypeScript,  category: language, aliases: [ts] }
+    - { name: Go,          category: language, aliases: [golang], case-sensitive-aliases: [Go] }
+    - { name: Rust,        category: language }
+    - { name: C++,         category: language, aliases: [cpp] }
+    - { name: C#,          category: language, aliases: [csharp] }
+    - { name: Ruby,        category: language }
+    - { name: PHP,         category: language }
+    - { name: Swift,       category: language }
+    - { name: Objective-C, category: language }
+    - { name: SQL,         category: language }
+    - { name: Bash,        category: language, aliases: [shell scripting] }
+    # Frameworks and runtimes
+    - { name: Spring,      category: framework, aliases: [spring boot, spring framework] }
+    - { name: React,       category: framework, aliases: [react.js, reactjs] }
+    - { name: React Native, category: framework }
+    - { name: Angular,     category: framework }
+    - { name: Vue,         category: framework, aliases: [vue.js, vuejs] }
+    - { name: Next.js,     category: framework, aliases: [nextjs] }
+    - { name: Node.js,     category: framework, aliases: [nodejs, node] }
+    - { name: Django,      category: framework }
+    - { name: Flask,       category: framework }
+    - { name: FastAPI,     category: framework }
+    - { name: Rails,       category: framework, aliases: [ruby on rails] }
+    - { name: .NET,        category: framework, aliases: [dotnet, asp.net] }
+    - { name: GraphQL,     category: framework }
+    - { name: gRPC,        category: framework }
+    - { name: REST,        category: framework, aliases: [restful, rest api, rest apis] }
+    # Data
+    - { name: PostgreSQL,  category: data, aliases: [postgres] }
+    - { name: MySQL,       category: data }
+    - { name: MongoDB,     category: data, aliases: [mongo] }
+    - { name: Redis,       category: data }
+    - { name: Elasticsearch, category: data, aliases: [opensearch] }
+    - { name: Kafka,       category: data, aliases: [apache kafka] }
+    - { name: Spark,       category: data, aliases: [apache spark, pyspark] }
+    - { name: Snowflake,   category: data }
+    - { name: BigQuery,    category: data }
+    - { name: Airflow,     category: data, aliases: [apache airflow] }
+    - { name: dbt,         category: data }
+    - { name: Pandas,      category: data }
+    # Infrastructure
+    - { name: Docker,      category: infrastructure, aliases: [containers, containerization] }
+    - { name: Kubernetes,  category: infrastructure, aliases: [k8s] }
+    - { name: Terraform,   category: infrastructure }
+    - { name: AWS,         category: infrastructure, aliases: [amazon web services] }
+    - { name: GCP,         category: infrastructure, aliases: [google cloud, google cloud platform] }
+    - { name: Azure,       category: infrastructure, aliases: [microsoft azure] }
+    - { name: Linux,       category: infrastructure }
+    - { name: CI/CD,       category: infrastructure, aliases: [continuous integration, github actions, jenkins] }
+    - { name: Git,         category: infrastructure, aliases: [github] }
+    - { name: Microservices, category: infrastructure, aliases: [microservice, distributed systems] }
+    # AI / ML
+    - { name: Machine Learning, category: ml, aliases: [ml] }
+    - { name: PyTorch,     category: ml }
+    - { name: TensorFlow,  category: ml }
+    - { name: LLMs,        category: ml, aliases: [llm, large language models, large language model] }
+    # Practices
+    - { name: Testing,     category: practice, aliases: [unit testing, junit, pytest, test automation, tdd] }
+    - { name: Agile,       category: practice, aliases: [scrum] }

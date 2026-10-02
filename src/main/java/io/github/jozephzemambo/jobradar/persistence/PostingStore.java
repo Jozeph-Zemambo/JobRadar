@@ -2,6 +2,7 @@ package io.github.jozephzemambo.jobradar.persistence;
 
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
+import io.github.jozephzemambo.jobradar.scoring.ScoredPosting;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,7 +31,7 @@ public class PostingStore {
 
     /** One transaction per board: a database error on one board doesn't roll back the others. */
     @Transactional
-    public SyncCounts syncBoard(Company company, List<Posting> current, Instant now) {
+    public SyncCounts syncBoard(Company company, List<ScoredPosting> current, Instant now) {
         Map<String, PostingEntity> existing = new HashMap<>();
         for (PostingEntity entity : repository.findByAtsAndBoardToken(company.ats(), company.boardToken())) {
             existing.put(entity.getExternalId(), entity);
@@ -41,22 +42,22 @@ public class PostingStore {
         int reopened = 0;
         Set<String> seen = new HashSet<>();
         List<PostingEntity> toSave = new ArrayList<>(current.size());
-        for (Posting posting : current) {
+        for (ScoredPosting scored : current) {
+            Posting posting = scored.posting();
             if (!seen.add(posting.externalId())) {
                 continue; // the same id twice in one response: keep the first
             }
             PostingEntity entity = existing.get(posting.externalId());
             if (entity == null) {
-                toSave.add(PostingEntity.create(posting, company.boardToken(), now));
+                entity = PostingEntity.create(posting, company.boardToken(), now);
                 created++;
+            } else if (entity.refresh(posting, now)) {
+                reopened++;
             } else {
-                if (entity.refresh(posting, now)) {
-                    reopened++;
-                } else {
-                    updated++;
-                }
-                toSave.add(entity);
+                updated++;
             }
+            entity.applyScore(scored.score());
+            toSave.add(entity);
         }
 
         int closed = 0;

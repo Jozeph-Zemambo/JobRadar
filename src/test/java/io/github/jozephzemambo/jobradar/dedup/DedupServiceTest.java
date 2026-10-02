@@ -5,10 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
+import io.github.jozephzemambo.jobradar.scoring.ScoredPosting;
 import io.github.jozephzemambo.jobradar.persistence.PostingEntity;
 import io.github.jozephzemambo.jobradar.persistence.PostingRepository;
 import io.github.jozephzemambo.jobradar.persistence.PostingStore;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -52,7 +54,7 @@ class DedupServiceTest {
 
     @Test
     void linksDuplicatesInTheDatabaseAndRecomputesOnEveryRun() {
-        store.syncBoard(stripe, List.of(
+        store.syncBoard(stripe, scored(
                 posting("1", "Abuse Investigator", "Dublin"),
                 posting("2", "Abuse Investigator", "Dublin"),
                 posting("3", "Abuse Investigator", "Seattle")), NOW);
@@ -70,7 +72,7 @@ class DedupServiceTest {
         assertThat(byId.get("3").getDuplicateOfId()).isNull();
 
         // The canonical posting closes: the remaining one is no longer a duplicate of anything open.
-        store.syncBoard(stripe, List.of(posting("2", "Abuse Investigator", "Dublin"),
+        store.syncBoard(stripe, scored(posting("2", "Abuse Investigator", "Dublin"),
                 posting("3", "Abuse Investigator", "Seattle")), NOW.plusSeconds(86_400));
         em.flush();
         DedupResult second = dedupService.refresh();
@@ -82,7 +84,7 @@ class DedupServiceTest {
 
     @Test
     void loadsLocationsThroughTheConverterInAProjection() {
-        store.syncBoard(stripe, List.of(posting("1", "Designer", "Dublin")), NOW);
+        store.syncBoard(stripe, scored(posting("1", "Designer", "Dublin")), NOW);
         em.flush();
 
         assertThat(dedupService.loadOpenCandidates()).singleElement().satisfies(c -> {
@@ -99,5 +101,9 @@ class DedupServiceTest {
     private static Posting posting(String id, String title, String location) {
         return new Posting(Ats.GREENHOUSE, id, "Stripe", title, List.of(location, "Remote (EU)"), null,
                 "8611 Security Analytics", "https://stripe.com/jobs/search?gh_jid=" + id, null, "", null, null);
+    }
+
+    private static List<ScoredPosting> scored(Posting... postings) {
+        return Arrays.stream(postings).map(p -> new ScoredPosting(p, null)).toList();
     }
 }

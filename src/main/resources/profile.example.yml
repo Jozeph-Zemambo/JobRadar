@@ -1,0 +1,10 @@
+# Example ranking profile: a generalist software engineer. Copy to ./profile.yml (git-ignored) to rank
+# against your own skills; ./profile.yml overrides this file when present.
+jobradar:
+  profile:
+    name: generalist-swe
+    skills: [Python, Java, TypeScript, JavaScript, React, Spring, Node.js, SQL, PostgreSQL, Docker, Kubernetes,
+             AWS, Git, REST, Linux, CI/CD, Testing]
+    title-keywords: [software engineer, software developer, backend, back end, full stack, fullstack, frontend,
+                     front end, platform engineer, developer]
+    title-exclusions: [director, vice president, vp, head of, principal, distinguished, intern, internship]

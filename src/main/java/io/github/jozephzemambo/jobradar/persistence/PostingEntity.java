@@ -5,6 +5,7 @@ import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Posting;
 import io.github.jozephzemambo.jobradar.domain.WorkplaceType;
 import io.github.jozephzemambo.jobradar.normalize.TitleNormalizer;
+import io.github.jozephzemambo.jobradar.scoring.ScoreBreakdown;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -98,6 +99,16 @@ public class PostingEntity {
     @Column(name = "dedup_reason", length = 20)
     private DedupResult.Reason dedupReason;
 
+    private Double score;
+
+    @Convert(converter = StringListConverter.class)
+    @Column(length = 2000)
+    private List<String> skills = new ArrayList<>();
+
+    @Convert(converter = StringListConverter.class)
+    @Column(name = "matched_skills", length = 2000)
+    private List<String> matchedSkills = new ArrayList<>();
+
     protected PostingEntity() {
         // for JPA
     }
@@ -135,6 +146,19 @@ public class PostingEntity {
         boolean reopened = closedAt != null;
         closedAt = null;
         return reopened;
+    }
+
+    /** Stores the ranking; a null breakdown clears it. */
+    public void applyScore(ScoreBreakdown breakdown) {
+        if (breakdown == null) {
+            score = null;
+            skills = new ArrayList<>();
+            matchedSkills = new ArrayList<>();
+        } else {
+            score = breakdown.score();
+            skills = new ArrayList<>(breakdown.postingSkills());
+            matchedSkills = new ArrayList<>(breakdown.matchedSkills());
+        }
     }
 
     /** The posting is no longer on its board. */
@@ -223,6 +247,18 @@ public class PostingEntity {
 
     public Instant getClosedAt() {
         return closedAt;
+    }
+
+    public Double getScore() {
+        return score;
+    }
+
+    public List<String> getSkills() {
+        return List.copyOf(skills);
+    }
+
+    public List<String> getMatchedSkills() {
+        return List.copyOf(matchedSkills);
     }
 
     public Long getDuplicateOfId() {

@@ -2,7 +2,8 @@ spring:
   application:
     name: jobradar
   config:
-    import: classpath:companies.yml
+    # Later imports win: a local ./profile.yml replaces the example profile.
+    import: classpath:companies.yml, classpath:skills.yml, classpath:profile.example.yml, optional:file:./profile.yml
   threads:
     virtual:
       enabled: true
