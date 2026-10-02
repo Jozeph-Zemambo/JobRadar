@@ -3,6 +3,7 @@ package io.github.jozephzemambo.jobradar.ingest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -12,6 +13,10 @@ import io.github.jozephzemambo.jobradar.config.JobRadarProperties;
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
+import io.github.jozephzemambo.jobradar.persistence.IngestRunEntity;
+import io.github.jozephzemambo.jobradar.persistence.IngestRunRepository;
+import io.github.jozephzemambo.jobradar.persistence.PostingStore;
+import io.github.jozephzemambo.jobradar.persistence.SyncCounts;
 import io.github.jozephzemambo.jobradar.source.BoardNotFoundException;
 import io.github.jozephzemambo.jobradar.source.JobSource;
 import io.github.jozephzemambo.jobradar.source.SourceRegistry;
@@ -36,6 +41,8 @@ class IngestServiceTest {
     private final JobSource greenhouse = mock(JobSource.class);
     private final JobSource lever = mock(JobSource.class);
     private final JobSource ashby = mock(JobSource.class);
+    private final PostingStore store = mock(PostingStore.class);
+    private final IngestRunRepository runs = mock(IngestRunRepository.class);
     private IngestService service;
 
     @BeforeEach
@@ -43,11 +50,14 @@ class IngestServiceTest {
         when(greenhouse.ats()).thenReturn(Ats.GREENHOUSE);
         when(lever.ats()).thenReturn(Ats.LEVER);
         when(ashby.ats()).thenReturn(Ats.ASHBY);
+        when(store.syncBoard(any(), any(), any()))
+                .thenAnswer(inv -> new SyncCounts(inv.<List<?>>getArgument(1).size(), 0, 0, 0));
+        when(runs.save(any())).thenAnswer(inv -> inv.getArgument(0));
         JobRadarProperties props = new JobRadarProperties(null, null, List.of(stripe, plaid, ramp));
         service = new IngestService(new SourceRegistry(List.of(greenhouse, lever, ashby)),
                 List.of(new SequentialFetchStrategy(), new PlatformPoolFetchStrategy(2),
                         new VirtualThreadFetchStrategy()),
-                props, Clock.fixed(NOW, ZoneOffset.UTC));
+                store, runs, props, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @ParameterizedTest
@@ -71,6 +81,11 @@ class IngestServiceTest {
             assertThat(f.errorType()).isEqualTo("BoardNotFoundException");
         });
         assertThat(report.wallTime()).isGreaterThanOrEqualTo(report.fetchTime());
+        assertThat(report.sync().created()).isEqualTo(3);
+        // The failed board must not be synced: an empty list would wrongly close all its postings.
+        verify(store, never()).syncBoard(eq(plaid), any(), any());
+        verify(store).syncBoard(stripe, List.of(posting(Ats.GREENHOUSE, "1"), posting(Ats.GREENHOUSE, "2")), NOW);
+        verify(runs).save(any(IngestRunEntity.class));
     }
 
     @Test

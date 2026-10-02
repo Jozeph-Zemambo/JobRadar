@@ -4,6 +4,10 @@ import io.github.jozephzemambo.jobradar.config.JobRadarProperties;
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
+import io.github.jozephzemambo.jobradar.persistence.IngestRunEntity;
+import io.github.jozephzemambo.jobradar.persistence.IngestRunRepository;
+import io.github.jozephzemambo.jobradar.persistence.PostingStore;
+import io.github.jozephzemambo.jobradar.persistence.SyncCounts;
 import io.github.jozephzemambo.jobradar.source.SourceRegistry;
 import java.time.Clock;
 import java.time.Duration;
@@ -30,11 +34,15 @@ public class IngestService {
     private final SourceRegistry sources;
     private final Map<FetchMode, FetchStrategy> strategies;
     private final Map<String, Company> companiesByToken;
+    private final PostingStore store;
+    private final IngestRunRepository runs;
     private final Clock clock;
 
-    public IngestService(SourceRegistry sources, List<FetchStrategy> strategies, JobRadarProperties props,
-            Clock clock) {
+    public IngestService(SourceRegistry sources, List<FetchStrategy> strategies, PostingStore store,
+            IngestRunRepository runs, JobRadarProperties props, Clock clock) {
         this.sources = sources;
+        this.store = store;
+        this.runs = runs;
         this.strategies = new EnumMap<>(FetchMode.class);
         for (FetchStrategy strategy : strategies) {
             this.strategies.put(strategy.mode(), strategy);
@@ -58,25 +66,37 @@ public class IngestService {
         List<FetchOutcome> outcomes = strategy.fetchAll(companies, this::fetchOne);
         Duration fetchTime = Duration.ofNanos(System.nanoTime() - startNanos);
 
+        // Persistence runs on this one thread after the fan-out: JDBC stays off the virtual threads (some drivers
+        // pin them on JDK 21), and each board commits in its own transaction.
+        long persistStart = System.nanoTime();
         List<Posting> postings = new ArrayList<>();
         List<IngestReport.CompanyFailure> failures = new ArrayList<>();
+        SyncCounts sync = SyncCounts.ZERO;
         for (FetchOutcome outcome : outcomes) {
             switch (outcome) {
-                case FetchOutcome.Success success -> postings.addAll(success.postings());
+                case FetchOutcome.Success success -> {
+                    postings.addAll(success.postings());
+                    sync = sync.plus(store.syncBoard(success.company(), success.postings(), startedAt));
+                }
                 case FetchOutcome.Failure failure -> failures.add(new IngestReport.CompanyFailure(
                         failure.company().name(), failure.company().boardToken(), failure.company().ats(),
                         failure.errorType(), failure.message()));
             }
         }
+        Duration persistTime = Duration.ofNanos(System.nanoTime() - persistStart);
         Map<Ats, Integer> byAts = postings.stream()
                 .collect(Collectors.groupingBy(Posting::ats, () -> new EnumMap<>(Ats.class),
                         Collectors.summingInt(p -> 1)));
+        Duration wallTime = Duration.ofNanos(System.nanoTime() - startNanos);
 
-        IngestReport report = new IngestReport(startedAt, request.mode(), companies.size(),
-                companies.size() - failures.size(), List.copyOf(failures), postings.size(), byAts, fetchTime,
-                Duration.ofNanos(System.nanoTime() - startNanos));
-        log.info("Ingest {}: {} boards, {} failed, {} postings in {} ms", request.mode(), companies.size(),
-                failures.size(), postings.size(), report.wallTime().toMillis());
+        int succeeded = companies.size() - failures.size();
+        IngestRunEntity run = runs.save(new IngestRunEntity(startedAt, request.mode(), companies.size(), succeeded,
+                postings.size(), sync, fetchTime.toMillis(), persistTime.toMillis(), wallTime.toMillis()));
+
+        IngestReport report = new IngestReport(run.getId(), startedAt, request.mode(), companies.size(), succeeded,
+                List.copyOf(failures), postings.size(), byAts, sync, fetchTime, persistTime, wallTime);
+        log.info("Ingest {}: {} boards, {} failed, {} postings ({}) in {} ms", request.mode(), companies.size(),
+                failures.size(), postings.size(), sync, wallTime.toMillis());
         return report;
     }
 

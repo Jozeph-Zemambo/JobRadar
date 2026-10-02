@@ -1,0 +1,242 @@
+package io.github.jozephzemambo.jobradar.persistence;
+
+import io.github.jozephzemambo.jobradar.domain.Ats;
+import io.github.jozephzemambo.jobradar.domain.Posting;
+import io.github.jozephzemambo.jobradar.domain.WorkplaceType;
+import io.github.jozephzemambo.jobradar.normalize.TitleNormalizer;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.SequenceGenerator;
+import jakarta.persistence.Table;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Persistent form of a {@link Posting}, plus what only JobRadar knows: when it was first and last seen, and
+ * when it disappeared.
+ *
+ * <p>Kept separate from the {@code Posting} record on purpose: JPA needs a mutable class with a no-arg
+ * constructor, while the domain model is immutable. Mapping happens in exactly two places,
+ * {@link #create} and {@link #refresh}.
+ */
+@Entity
+@Table(name = "posting")
+public class PostingEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "posting_seq")
+    @SequenceGenerator(name = "posting_seq", sequenceName = "posting_seq", allocationSize = 50)
+    private Long id;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private Ats ats;
+
+    @Column(name = "external_id", nullable = false, length = 200)
+    private String externalId;
+
+    @Column(name = "board_token", nullable = false, length = 100)
+    private String boardToken;
+
+    @Column(nullable = false, length = 200)
+    private String company;
+
+    @Column(nullable = false, length = 500)
+    private String title;
+
+    @Column(name = "normalized_title", nullable = false, length = 500)
+    private String normalizedTitle;
+
+    @Convert(converter = StringListConverter.class)
+    @Column(length = 4000)
+    private List<String> locations = new ArrayList<>();
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "workplace_type", nullable = false, length = 20)
+    private WorkplaceType workplaceType;
+
+    @Column(length = 500)
+    private String department;
+
+    @Column(nullable = false, length = 2000)
+    private String url;
+
+    @Column(name = "canonical_url", nullable = false, length = 2000)
+    private String canonicalUrl;
+
+    @Column(length = 200000)
+    private String description;
+
+    @Column(length = 500)
+    private String compensation;
+
+    @Column(name = "source_published_at")
+    private Instant sourcePublishedAt;
+
+    @Column(name = "first_seen_at", nullable = false)
+    private Instant firstSeenAt;
+
+    @Column(name = "last_seen_at", nullable = false)
+    private Instant lastSeenAt;
+
+    @Column(name = "closed_at")
+    private Instant closedAt;
+
+    protected PostingEntity() {
+        // for JPA
+    }
+
+    /** A posting seen for the first time. */
+    public static PostingEntity create(Posting posting, String boardToken, Instant now) {
+        PostingEntity entity = new PostingEntity();
+        entity.ats = posting.ats();
+        entity.externalId = posting.externalId();
+        entity.boardToken = boardToken;
+        entity.firstSeenAt = now;
+        entity.refresh(posting, now);
+        return entity;
+    }
+
+    /**
+     * The posting was seen again: take the latest content, bump {@code lastSeenAt}, and reopen it if it had been
+     * marked closed (boards sometimes unpublish and republish the same req).
+     *
+     * @return true if the posting was closed and is now reopened
+     */
+    public boolean refresh(Posting posting, Instant now) {
+        company = posting.company();
+        title = truncate(posting.title(), 500);
+        normalizedTitle = truncate(TitleNormalizer.normalize(posting.title()), 500);
+        locations = new ArrayList<>(posting.locations());
+        workplaceType = posting.workplaceType();
+        department = truncate(posting.department(), 500);
+        url = truncate(posting.url(), 2000);
+        canonicalUrl = truncate(posting.canonicalUrl(), 2000);
+        description = truncate(posting.descriptionText(), 200000);
+        compensation = truncate(posting.compensationSummary(), 500);
+        sourcePublishedAt = posting.sourcePublishedAt();
+        lastSeenAt = now;
+        boolean reopened = closedAt != null;
+        closedAt = null;
+        return reopened;
+    }
+
+    /** The posting is no longer on its board. */
+    public void close(Instant now) {
+        if (closedAt == null) {
+            closedAt = now;
+        }
+    }
+
+    public Posting toPosting() {
+        return new Posting(ats, externalId, company, title, locations, workplaceType, department, url, canonicalUrl,
+                description, sourcePublishedAt, compensation);
+    }
+
+    private static String truncate(String value, int max) {
+        return value == null || value.length() <= max ? value : value.substring(0, max);
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public Ats getAts() {
+        return ats;
+    }
+
+    public String getExternalId() {
+        return externalId;
+    }
+
+    public String getBoardToken() {
+        return boardToken;
+    }
+
+    public String getCompany() {
+        return company;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public String getNormalizedTitle() {
+        return normalizedTitle;
+    }
+
+    public List<String> getLocations() {
+        return List.copyOf(locations);
+    }
+
+    public WorkplaceType getWorkplaceType() {
+        return workplaceType;
+    }
+
+    public String getDepartment() {
+        return department;
+    }
+
+    public String getUrl() {
+        return url;
+    }
+
+    public String getCanonicalUrl() {
+        return canonicalUrl;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public String getCompensation() {
+        return compensation;
+    }
+
+    public Instant getSourcePublishedAt() {
+        return sourcePublishedAt;
+    }
+
+    public Instant getFirstSeenAt() {
+        return firstSeenAt;
+    }
+
+    public Instant getLastSeenAt() {
+        return lastSeenAt;
+    }
+
+    public Instant getClosedAt() {
+        return closedAt;
+    }
+
+    public boolean isOpen() {
+        return closedAt == null;
+    }
+
+    /**
+     * Identity is the database id. Two transient (unsaved) entities are never equal, and the hash code is
+     * constant per class so an entity doesn't change buckets in a HashSet when it gets its id on persist.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof PostingEntity other)) {
+            return false;
+        }
+        return id != null && id.equals(other.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return PostingEntity.class.hashCode();
+    }
+}
