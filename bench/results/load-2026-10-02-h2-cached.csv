@@ -1,0 +1,9 @@
+endpoint,concurrency,requests,failed,rps,p50_ms,p95_ms,p99_ms,max_ms
+postings_ranked,10,5000,0,3368.95,2,5,20,76
+postings_ranked,50,5000,0,3959.97,11,24,33,92
+postings_filtered,10,5000,0,141.45,70,81,90,105
+postings_filtered,50,5000,0,141.95,349,377,391,410
+posting_detail,10,5000,0,4652.17,2,8,10,19
+posting_detail,50,5000,0,13062.81,4,4,5,8
+stats,10,5000,0,25564.86,0,1,1,11
+stats,50,5000,0,43267.57,1,2,2,18

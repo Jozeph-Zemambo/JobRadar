@@ -25,6 +25,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 /**
@@ -45,13 +46,15 @@ public class IngestService {
     private final Profile profile;
     private final IngestRunRepository runs;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
     /** One ingest at a time: an API call and the scheduled crawl must not sync the same boards concurrently. */
     private final ReentrantLock running = new ReentrantLock();
 
     public IngestService(SourceRegistry sources, List<FetchStrategy> strategies, PostingStore store,
             DedupService dedupService, Scorer scorer, Profile profile, IngestRunRepository runs,
-            JobRadarProperties props, Clock clock) {
+            JobRadarProperties props, Clock clock, ApplicationEventPublisher events) {
         this.sources = sources;
+        this.events = events;
         this.store = store;
         this.dedupService = dedupService;
         this.scorer = scorer;
@@ -133,6 +136,7 @@ public class IngestService {
                 persistTime.toMillis(), wallTime.toMillis());
         log.info("Ingest {}: {} boards, {} failed, {} postings ({}) in {} ms", request.mode(), companies.size(),
                 failures.size(), postings.size(), sync, wallTime.toMillis());
+        events.publishEvent(new IngestCompletedEvent(run.getId()));
         return report;
     }
 

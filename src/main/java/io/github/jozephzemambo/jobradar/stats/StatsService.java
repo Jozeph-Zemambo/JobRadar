@@ -16,14 +16,26 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
+import io.github.jozephzemambo.jobradar.ingest.IngestCompletedEvent;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Aggregates for {@code GET /api/stats}. Date arithmetic happens in Java so the queries stay portable. */
+/**
+ * Aggregates for {@code GET /api/stats}. Date arithmetic happens in Java so the queries stay portable.
+ *
+ * <p>Results are cached per {@code topN} and evicted when an ingest completes: the underlying data only changes
+ * during ingest, and recomputing scans every open posting's skills. The one time-dependent field
+ * ({@code newLast7Days}) can therefore be up to one crawl interval stale, which a daily crawl keeps to a day.
+ */
 @Service
 @Transactional(readOnly = true)
 public class StatsService {
+
+    public static final String CACHE = "stats";
 
     private static final double SECONDS_PER_DAY = 86_400.0;
 
@@ -40,6 +52,7 @@ public class StatsService {
         this.clock = clock;
     }
 
+    @Cacheable(cacheNames = CACHE, key = "#topN")
     public StatsView stats(int topN) {
         if (topN < 1 || topN > 100) {
             throw new IllegalArgumentException("top must be between 1 and 100");
@@ -64,6 +77,12 @@ public class StatsService {
                 new StatsView.Crawl(runs.count(), first.map(IngestRunEntity::getStartedAt).orElse(null),
                         last.map(IngestRunEntity::getStartedAt).orElse(null),
                         last.map(IngestRunEntity::getCompaniesRequested).orElse(null)));
+    }
+
+    @EventListener
+    @CacheEvict(cacheNames = CACHE, allEntries = true)
+    public void onIngestCompleted(IngestCompletedEvent event) {
+        // Eviction is the whole job; the annotation does it.
     }
 
     /** Counts skill mentions in Java, then keeps the top N with a size-bounded min-heap: O(skills * log N). */

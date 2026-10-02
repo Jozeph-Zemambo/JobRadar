@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -54,6 +55,7 @@ class IngestServiceTest {
     private final Profile profile = new Profile("p", List.of("Java"), List.of("engineer"), List.of());
     private final Scorer scorer = (posting, prof) -> new ScoreBreakdown(0.5, 0.5, true, false, List.of(),
             List.of(), List.of());
+    private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
     private IngestService service;
 
     @BeforeEach
@@ -69,7 +71,7 @@ class IngestServiceTest {
         service = new IngestService(new SourceRegistry(List.of(greenhouse, lever, ashby)),
                 List.of(new SequentialFetchStrategy(), new PlatformPoolFetchStrategy(2),
                         new VirtualThreadFetchStrategy()),
-                store, dedupService, scorer, profile, runs, props, Clock.fixed(NOW, ZoneOffset.UTC));
+                store, dedupService, scorer, profile, runs, props, Clock.fixed(NOW, ZoneOffset.UTC), events);
     }
 
     @ParameterizedTest
@@ -102,6 +104,7 @@ class IngestServiceTest {
         assertThat(scoring.getValue().apply(posting(Ats.GREENHOUSE, "1")).score()).isEqualTo(0.5);
         verify(runs).save(any(IngestRunEntity.class));
         assertThat(report.dedup()).isEqualTo(new IngestReport.DedupCounts(3, 0, 0));
+        verify(events).publishEvent(new IngestCompletedEvent(report.runId()));
     }
 
     @Test
