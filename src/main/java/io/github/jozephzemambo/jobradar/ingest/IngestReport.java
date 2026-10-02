@@ -2,7 +2,6 @@ package io.github.jozephzemambo.jobradar.ingest;
 
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.persistence.SyncCounts;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -19,9 +18,9 @@ import java.util.Map;
  * @param postingsByAts      postingsFetched split by ATS
  * @param sync               what the run did to stored postings (new / still listed / reopened / closed)
  * @param dedup              duplicate counts across all open postings after this run
- * @param fetchTime          wall time of the fetch phase (HTTP + parse + map)
- * @param persistTime        wall time of the database phase
- * @param wallTime           wall time of the whole run
+ * @param fetchMillis        wall time of the fetch phase (HTTP + parse + map)
+ * @param persistMillis      wall time of scoring + database + dedup
+ * @param wallMillis         wall time of the whole run
  * @param runId              id of the stored ingest_run row
  */
 public record IngestReport(
@@ -35,9 +34,9 @@ public record IngestReport(
         Map<Ats, Integer> postingsByAts,
         SyncCounts sync,
         DedupCounts dedup,
-        Duration fetchTime,
-        Duration persistTime,
-        Duration wallTime) {
+        long fetchMillis,
+        long persistMillis,
+        long wallMillis) {
 
     /**
      * @param openPostings    open postings considered

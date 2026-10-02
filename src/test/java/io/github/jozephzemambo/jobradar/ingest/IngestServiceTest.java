@@ -92,7 +92,7 @@ class IngestServiceTest {
             assertThat(f.boardToken()).isEqualTo("plaid");
             assertThat(f.errorType()).isEqualTo("BoardNotFoundException");
         });
-        assertThat(report.wallTime()).isGreaterThanOrEqualTo(report.fetchTime());
+        assertThat(report.wallMillis()).isGreaterThanOrEqualTo(report.fetchMillis());
         assertThat(report.sync().created()).isEqualTo(3);
         // The failed board must not be synced: an empty list would wrongly close all its postings.
         verify(store, never()).syncBoard(eq(plaid), any(), any(), any());

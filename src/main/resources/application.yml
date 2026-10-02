@@ -8,7 +8,7 @@ spring:
     virtual:
       enabled: true
   datasource:
-    url: jdbc:h2:file:./data/jobradar;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    url: jdbc:h2:file:./data/jobradar;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
     username: sa
     password: ""
   jpa:

@@ -21,6 +21,7 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +45,8 @@ public class IngestService {
     private final Profile profile;
     private final IngestRunRepository runs;
     private final Clock clock;
+    /** One ingest at a time: an API call and the scheduled crawl must not sync the same boards concurrently. */
+    private final ReentrantLock running = new ReentrantLock();
 
     public IngestService(SourceRegistry sources, List<FetchStrategy> strategies, PostingStore store,
             DedupService dedupService, Scorer scorer, Profile profile, IngestRunRepository runs,
@@ -65,7 +68,24 @@ public class IngestService {
         this.clock = clock;
     }
 
+    /**
+     * Runs one ingest.
+     *
+     * @throws IngestInProgressException if another ingest is already running
+     * @throws IllegalArgumentException  if the request names unknown companies
+     */
     public IngestReport ingest(IngestRequest request) {
+        if (!running.tryLock()) {
+            throw new IngestInProgressException();
+        }
+        try {
+            return runIngest(request);
+        } finally {
+            running.unlock();
+        }
+    }
+
+    private IngestReport runIngest(IngestRequest request) {
         Instant startedAt = clock.instant();
         long startNanos = System.nanoTime();
         List<Company> companies = resolve(request.companies());
@@ -109,7 +129,8 @@ public class IngestService {
                 postings.size(), sync, fetchTime.toMillis(), persistTime.toMillis(), wallTime.toMillis()));
 
         IngestReport report = new IngestReport(run.getId(), startedAt, request.mode(), companies.size(), succeeded,
-                List.copyOf(failures), postings.size(), byAts, sync, dedupCounts, fetchTime, persistTime, wallTime);
+                List.copyOf(failures), postings.size(), byAts, sync, dedupCounts, fetchTime.toMillis(),
+                persistTime.toMillis(), wallTime.toMillis());
         log.info("Ingest {}: {} boards, {} failed, {} postings ({}) in {} ms", request.mode(), companies.size(),
                 failures.size(), postings.size(), sync, wallTime.toMillis());
         return report;

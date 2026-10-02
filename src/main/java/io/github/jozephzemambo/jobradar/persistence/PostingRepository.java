@@ -4,11 +4,13 @@ import io.github.jozephzemambo.jobradar.dedup.DedupResult;
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface PostingRepository extends JpaRepository<PostingEntity, Long> {
+public interface PostingRepository extends JpaRepository<PostingEntity, Long>,
+        JpaSpecificationExecutor<PostingEntity> {
 
     /** Every posting ever seen on one board, open or closed. One query per board per ingest. */
     List<PostingEntity> findByAtsAndBoardToken(Ats ats, String boardToken);
@@ -30,4 +32,12 @@ public interface PostingRepository extends JpaRepository<PostingEntity, Long> {
     @Query("update PostingEntity p set p.duplicateOfId = :canonicalId, p.dedupReason = :reason where p.id = :id")
     int markDuplicate(@Param("id") long id, @Param("canonicalId") long canonicalId,
             @Param("reason") DedupResult.Reason reason);
+
+    List<PostingEntity> findByDuplicateOfIdOrderByIdAsc(Long canonicalId);
+
+    /** Per board: total postings, open postings, last time any posting was seen. */
+    @Query("""
+            select p.ats, p.boardToken, count(p), sum(case when p.closedAt is null then 1 else 0 end), max(p.lastSeenAt)
+            from PostingEntity p group by p.ats, p.boardToken""")
+    List<Object[]> boardSummaries();
 }
