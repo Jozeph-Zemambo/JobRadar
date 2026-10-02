@@ -1,0 +1,5 @@
+# One-shot crawl: no web server; CrawlRunner ingests every configured board and the process exits.
+# Usage: java -jar jobradar.jar --spring.profiles.active=crawl
+spring:
+  main:
+    web-application-type: none
