@@ -16,7 +16,7 @@ Java 21, Spring Boot 4.1, Spring Data JPA (H2 or Postgres), Flyway, JUnit 5, Moc
 | Profiling win | re-sync persistence 14.6 s -> 3.2 s after a JFR profile |
 | Dedup precision | 86.0% (Wilson 95%: 73.8-93.0%) on a held-out, LLM-labeled 100-pair sample |
 | API (H2, c=10) | ranked list p50 2 ms / p95 5 ms; cached stats p50 under 1 ms |
-| Tests | 229, 96.5% line / 87.3% branch coverage (CI gate 90% / 80%) |
+| Tests | 250, 96.7% line / 87.6% branch coverage (CI gate 90% / 80%) |
 
 How each number was measured, with the raw data, is in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
@@ -47,7 +47,11 @@ flowchart LR
    - retries for 429, 5xx and network errors only, with full-jitter backoff and `Retry-After` honored.
 3. **Lifecycle.** The ATS APIs don't say when a posting closed, and their created dates can be years stale. Each
    ingest refreshes the postings still listed, closes the ones that disappeared, and reopens any that come back.
-   A board whose fetch failed is never synced, so a network error can't close its postings.
+   Absence only counts when the listing is known to be whole:
+   - a board whose fetch failed is never synced;
+   - a 200 response without a postings collection is treated as an error, not an empty board;
+   - a source returns an incomplete `BoardSnapshot` when it skipped an unparseable item or the listing shifted
+     while paging, and incomplete snapshots never close anything.
 4. **Scoring.** `KeywordScorer` matches a skills dictionary (`skills.yml`, with aliases such as k8s = Kubernetes)
    against a profile. It returns an explainable breakdown: the skills matched, the skills missing, and the title
    signal. Tokenization keeps `C++`, `C#` and `Node.js` intact and doesn't read "go-to-market" as Go.

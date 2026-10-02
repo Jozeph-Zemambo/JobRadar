@@ -99,6 +99,23 @@ class DeduplicatorTest {
     }
 
     @Test
+    void exactThenFuzzyChainPointsAtTheRoot() {
+        // 3 shares 2's URL (exact), and 2 fuzzily matches 1: both must point at 1, not 3 -> 2 -> 1.
+        DedupCandidate one = new DedupCandidate(1L, new PostingKey(Ats.LEVER, "1"), "Co", "Data Engineer",
+                List.of("Berlin"), null, "https://x.io/A");
+        DedupCandidate two = new DedupCandidate(2L, new PostingKey(Ats.LEVER, "2"), "Co", "Data Engineer",
+                List.of("Berlin"), null, "https://x.io/B");
+        DedupCandidate three = new DedupCandidate(3L, new PostingKey(Ats.LEVER, "3"), "Co", "Data Engineer",
+                List.of("Berlin"), null, "https://x.io/B");
+
+        DedupResult result = dedup.dedupe(List.of(three, two, one));
+
+        assertThat(result.duplicates()).hasSize(2).allSatisfy(d -> assertThat(d.canonical()).isEqualTo(one));
+        assertThat(result.duplicates()).filteredOn(d -> d.duplicate().equals(three))
+                .extracting(DedupResult.Duplicate::reason).containsExactly(DedupResult.Reason.EXACT_URL);
+    }
+
+    @Test
     void clusteringIsNotTransitive() {
         // A~B (0.75) and B~C (0.8) at threshold 0.7, but A~C is only 0.6: C must not be chained onto A.
         // (No level words in these titles, so only similarity decides.)

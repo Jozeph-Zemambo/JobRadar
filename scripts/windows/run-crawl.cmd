@@ -4,10 +4,11 @@ rem Called by the scheduled task that install-daily-crawl.ps1 creates; can also 
 rem Arguments: %1 = path to jobradar.jar, %2 = data directory (database, logs, optional profile.yml)
 
 setlocal
-set "JAR=%~1"
-set "DATA=%~2"
-if "%JAR%"=="" goto usage
-if "%DATA%"=="" goto usage
+rem %~f makes the paths absolute now, before the "cd" below would change what a relative path means.
+set "JAR=%~f1"
+set "DATA=%~f2"
+if "%~1"=="" goto usage
+if "%~2"=="" goto usage
 
 if not exist "%DATA%\logs" mkdir "%DATA%\logs"
 for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd"') do set "TODAY=%%d"

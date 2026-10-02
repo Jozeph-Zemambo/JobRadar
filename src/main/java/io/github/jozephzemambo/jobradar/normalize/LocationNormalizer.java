@@ -46,7 +46,7 @@ public final class LocationNormalizer {
 
     /** Not places at all. */
     private static final Set<String> WORKPLACE_WORDS = Set.of(
-            "hybrid", "onsite", "on site", "in office", "office", "hq", "headquarters", "flexible", "n a", "na",
+            "hybrid", "onsite", "inoffice", "office", "hq", "headquarters", "flexible", "n a", "na",
             "tbd", "multiple locations", "various");
 
     /** Places, but too coarse to say two postings are in the same location (unless nothing finer is given). */
@@ -115,7 +115,10 @@ public final class LocationNormalizer {
         if (location == null) {
             return out;
         }
-        String lower = location.toLowerCase(Locale.ROOT);
+        // Join hyphenated workplace words before splitting on hyphens, or "On-site" would become a place "site".
+        String lower = location.toLowerCase(Locale.ROOT)
+                .replaceAll("\\bon[\\s-]+site\\b", "onsite")
+                .replaceAll("\\bin[\\s-]+office\\b", "inoffice");
         Arrays.stream(lower.split("[,;|/()\\-–•]+"))
                 .map(s -> s.replaceAll("[^\\p{L}\\p{N} ]+", " ").replaceAll("\\s+", " ").strip())
                 .filter(s -> !s.isEmpty())

@@ -78,7 +78,12 @@ public class WorkdaySource extends AbstractPagedAtsSource<WorkdayDtos.Page, Work
 
     @Override
     protected List<WorkdayDtos.ListItem> items(WorkdayDtos.Page page) {
-        return page.jobPostings() == null ? List.of() : page.jobPostings();
+        return page.jobPostings();
+    }
+
+    @Override
+    protected String itemId(WorkdayDtos.ListItem item) {
+        return String.valueOf(item.externalPath());
     }
 
     @Override
@@ -111,7 +116,8 @@ public class WorkdaySource extends AbstractPagedAtsSource<WorkdayDtos.Page, Work
                 : item.externalPath() == null ? null : origin(board) + "/" + board.site() + item.externalPath();
         return new Posting(
                 Ats.WORKDAY,
-                item.externalPath(),
+                // Paths are unique per career site only, so the board token makes the id unique across tenants.
+                item.externalPath() == null ? null : company.boardToken() + item.externalPath(),
                 company.name(),
                 info != null && info.title() != null ? info.title() : item.title(),
                 locations,

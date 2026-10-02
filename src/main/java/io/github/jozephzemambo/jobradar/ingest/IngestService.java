@@ -12,6 +12,7 @@ import io.github.jozephzemambo.jobradar.persistence.PostingStore;
 import io.github.jozephzemambo.jobradar.persistence.SyncCounts;
 import io.github.jozephzemambo.jobradar.scoring.Profile;
 import io.github.jozephzemambo.jobradar.scoring.Scorer;
+import io.github.jozephzemambo.jobradar.source.BoardSnapshot;
 import io.github.jozephzemambo.jobradar.source.SourceRegistry;
 import java.time.Clock;
 import java.time.Duration;
@@ -39,7 +40,8 @@ public class IngestService {
 
     private final SourceRegistry sources;
     private final Map<FetchMode, FetchStrategy> strategies;
-    private final Map<String, Company> companiesByToken;
+    /** Configured boards keyed by "ATS:token": the same token can exist on two ATSes (e.g. mid-migration). */
+    private final Map<String, Company> companies;
     private final PostingStore store;
     private final DedupService dedupService;
     private final Scorer scorer;
@@ -64,9 +66,9 @@ public class IngestService {
         for (FetchStrategy strategy : strategies) {
             this.strategies.put(strategy.mode(), strategy);
         }
-        this.companiesByToken = new LinkedHashMap<>();
+        this.companies = new LinkedHashMap<>();
         for (Company company : props.companies()) {
-            this.companiesByToken.put(company.boardToken(), company);
+            this.companies.putIfAbsent(key(company.ats(), company.boardToken()), company);
         }
         this.clock = clock;
     }
@@ -100,52 +102,78 @@ public class IngestService {
         List<FetchOutcome> outcomes = strategy.fetchAll(companies, this::fetchOne);
         Duration fetchTime = Duration.ofNanos(System.nanoTime() - startNanos);
 
-        // Scoring, persistence and dedup run on this one thread after the fan-out: JDBC stays off the virtual threads (some drivers
-        // pin them on JDK 21), and each board commits in its own transaction.
+        // Scoring, persistence and dedup run on this one thread after the fan-out: JDBC stays off the virtual
+        // threads (some drivers pin them on JDK 21), and each board commits in its own transaction.
         long persistStart = System.nanoTime();
         List<Posting> postings = new ArrayList<>();
         List<IngestReport.CompanyFailure> failures = new ArrayList<>();
+        List<IngestReport.IncompleteBoard> incomplete = new ArrayList<>();
         SyncCounts sync = SyncCounts.ZERO;
-        for (FetchOutcome outcome : outcomes) {
-            switch (outcome) {
-                case FetchOutcome.Success success -> {
-                    postings.addAll(success.postings());
-                    sync = sync.plus(store.syncBoard(success.company(), success.postings(), startedAt,
-                            posting -> scorer.score(posting, profile)));
+        boolean wroteAny = false;
+        Long runId = null;
+        try {
+            for (FetchOutcome outcome : outcomes) {
+                switch (outcome) {
+                    case FetchOutcome.Success success -> {
+                        Company company = success.company();
+                        BoardSnapshot snapshot = success.snapshot();
+                        postings.addAll(snapshot.postings());
+                        try {
+                            sync = sync.plus(store.syncBoard(company, snapshot, startedAt,
+                                    posting -> scorer.score(posting, profile)));
+                            wroteAny = true;
+                            if (!snapshot.complete()) {
+                                incomplete.add(new IngestReport.IncompleteBoard(company.boardToken(), company.ats(),
+                                        snapshot.incompleteReason()));
+                            }
+                        } catch (RuntimeException e) {
+                            // A database error on one board (its transaction rolled back) must not stop the rest.
+                            log.error("Storing {} ({}) failed", company.boardToken(), company.ats(), e);
+                            failures.add(new IngestReport.CompanyFailure(company.name(), company.boardToken(),
+                                    company.ats(), "PersistenceFailure", e.getMessage()));
+                        }
+                    }
+                    case FetchOutcome.Failure failure -> failures.add(new IngestReport.CompanyFailure(
+                            failure.company().name(), failure.company().boardToken(), failure.company().ats(),
+                            failure.errorType(), failure.message()));
                 }
-                case FetchOutcome.Failure failure -> failures.add(new IngestReport.CompanyFailure(
-                        failure.company().name(), failure.company().boardToken(), failure.company().ats(),
-                        failure.errorType(), failure.message()));
+            }
+            DedupResult dedup = dedupService.refresh();
+            IngestReport.DedupCounts dedupCounts = new IngestReport.DedupCounts(dedup.candidates(),
+                    dedup.count(DedupResult.Reason.EXACT_URL), dedup.count(DedupResult.Reason.FUZZY));
+            Duration persistTime = Duration.ofNanos(System.nanoTime() - persistStart);
+            Map<Ats, Integer> byAts = postings.stream()
+                    .collect(Collectors.groupingBy(Posting::ats, () -> new EnumMap<>(Ats.class),
+                            Collectors.summingInt(p -> 1)));
+            Duration wallTime = Duration.ofNanos(System.nanoTime() - startNanos);
+
+            int succeeded = companies.size() - failures.size();
+            IngestRunEntity run = runs.save(new IngestRunEntity(startedAt, request.mode(), companies.size(),
+                    succeeded, postings.size(), sync, fetchTime.toMillis(), persistTime.toMillis(),
+                    wallTime.toMillis()));
+            runId = run.getId();
+
+            IngestReport report = new IngestReport(runId, startedAt, request.mode(), companies.size(), succeeded,
+                    List.copyOf(failures), List.copyOf(incomplete), postings.size(), byAts, sync, dedupCounts,
+                    fetchTime.toMillis(), persistTime.toMillis(), wallTime.toMillis());
+            log.info("Ingest {}: {} boards, {} failed, {} incomplete, {} postings ({}) in {} ms", request.mode(),
+                    companies.size(), failures.size(), incomplete.size(), postings.size(), sync, wallTime.toMillis());
+            return report;
+        } finally {
+            // Even if a later step throws, boards already committed changed the data: listeners (the stats cache)
+            // must hear about it.
+            if (wroteAny) {
+                events.publishEvent(new IngestCompletedEvent(runId));
             }
         }
-        DedupResult dedup = dedupService.refresh();
-        IngestReport.DedupCounts dedupCounts = new IngestReport.DedupCounts(dedup.candidates(),
-                dedup.count(DedupResult.Reason.EXACT_URL), dedup.count(DedupResult.Reason.FUZZY));
-        Duration persistTime = Duration.ofNanos(System.nanoTime() - persistStart);
-        Map<Ats, Integer> byAts = postings.stream()
-                .collect(Collectors.groupingBy(Posting::ats, () -> new EnumMap<>(Ats.class),
-                        Collectors.summingInt(p -> 1)));
-        Duration wallTime = Duration.ofNanos(System.nanoTime() - startNanos);
-
-        int succeeded = companies.size() - failures.size();
-        IngestRunEntity run = runs.save(new IngestRunEntity(startedAt, request.mode(), companies.size(), succeeded,
-                postings.size(), sync, fetchTime.toMillis(), persistTime.toMillis(), wallTime.toMillis()));
-
-        IngestReport report = new IngestReport(run.getId(), startedAt, request.mode(), companies.size(), succeeded,
-                List.copyOf(failures), postings.size(), byAts, sync, dedupCounts, fetchTime.toMillis(),
-                persistTime.toMillis(), wallTime.toMillis());
-        log.info("Ingest {}: {} boards, {} failed, {} postings ({}) in {} ms", request.mode(), companies.size(),
-                failures.size(), postings.size(), sync, wallTime.toMillis());
-        events.publishEvent(new IngestCompletedEvent(run.getId()));
-        return report;
     }
 
     /** Fetches one board and never throws: this is the per-board fault boundary. */
     FetchOutcome fetchOne(Company company) {
         long start = System.nanoTime();
         try {
-            List<Posting> postings = sources.forAts(company.ats()).fetch(company);
-            return new FetchOutcome.Success(company, postings, Duration.ofNanos(System.nanoTime() - start));
+            BoardSnapshot snapshot = sources.forAts(company.ats()).fetch(company);
+            return new FetchOutcome.Success(company, snapshot, Duration.ofNanos(System.nanoTime() - start));
         } catch (RuntimeException e) {
             log.warn("Fetching {} ({}) failed: {}", company.boardToken(), company.ats(), e.getMessage());
             return new FetchOutcome.Failure(company, e.getClass().getSimpleName(), e.getMessage(),
@@ -153,19 +181,37 @@ public class IngestService {
         }
     }
 
-    private List<Company> resolve(List<String> tokens) {
-        if (tokens.isEmpty()) {
-            return List.copyOf(companiesByToken.values());
+    /**
+     * Resolves requested boards. Each entry is a board token ("stripe"), which selects that token on every ATS
+     * that has it, or "ATS:token" ("LEVER:acme") to pick one.
+     */
+    private List<Company> resolve(List<String> requested) {
+        if (requested.isEmpty()) {
+            return List.copyOf(companies.values());
         }
-        List<String> unknown = tokens.stream().filter(t -> !companiesByToken.containsKey(t)).toList();
+        Map<String, Company> selected = new LinkedHashMap<>();
+        List<String> unknown = new ArrayList<>();
+        for (String entry : requested) {
+            List<Company> matches = companies.values().stream()
+                    .filter(c -> entry.equals(c.boardToken()) || entry.equalsIgnoreCase(key(c.ats(), c.boardToken())))
+                    .toList();
+            if (matches.isEmpty()) {
+                unknown.add(entry);
+            }
+            matches.forEach(c -> selected.putIfAbsent(key(c.ats(), c.boardToken()), c));
+        }
         if (!unknown.isEmpty()) {
             throw new IllegalArgumentException("Unknown companies: " + unknown);
         }
-        return tokens.stream().distinct().map(companiesByToken::get).toList();
+        return List.copyOf(selected.values());
     }
 
-    /** Visible for the benchmark harness, which fetches subsets of the configured list. */
+    private static String key(Ats ats, String boardToken) {
+        return ats + ":" + boardToken;
+    }
+
+    /** Every configured board, in configuration order. */
     public List<Company> configuredCompanies() {
-        return List.copyOf(companiesByToken.values());
+        return List.copyOf(companies.values());
     }
 }

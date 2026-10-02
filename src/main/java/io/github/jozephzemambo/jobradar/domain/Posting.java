@@ -9,7 +9,8 @@ import java.util.Objects;
  * Immutable: every source maps its own DTO into this shape and nothing downstream mutates it.
  *
  * @param ats                 source ATS
- * @param externalId          the ATS's own id for the posting (unique per ATS + board)
+ * @param externalId          the ATS's id for the posting, unique within the ATS (Workday ids are prefixed with
+ *                            the board token, since Workday paths repeat across career sites)
  * @param company             company display name
  * @param title               title as published (trimmed)
  * @param locations           every location the posting lists, primary first

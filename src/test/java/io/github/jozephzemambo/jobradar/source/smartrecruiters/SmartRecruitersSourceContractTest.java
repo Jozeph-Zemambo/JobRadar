@@ -48,7 +48,7 @@ class SmartRecruitersSourceContractTest {
                     .willReturn(okJson(fixture("smartrecruiters-detail-" + (i + 1) + ".json"))));
         }
 
-        List<Posting> postings = source(50).fetch(canva);
+        List<Posting> postings = source(50).fetch(canva).postings();
 
         assertThat(postings).hasSize(3);
         Posting first = postings.getFirst();
@@ -71,7 +71,7 @@ class SmartRecruitersSourceContractTest {
         wm.stubFor(get(urlPathEqualTo("/v1/companies/Canva/postings")).withQueryParam("offset", equalTo("100"))
                 .willReturn(okJson(page(150, 100, 50))));
 
-        List<Posting> postings = source(0).fetch(canva);
+        List<Posting> postings = source(0).fetch(canva).postings();
 
         assertThat(postings).hasSize(150);
         Posting remote = postings.getFirst();
@@ -89,7 +89,7 @@ class SmartRecruitersSourceContractTest {
         // Live: an unknown identifier returns 200 with totalFound 0, not 404.
         wm.stubFor(get(urlPathEqualTo("/v1/companies/Canva/postings"))
                 .willReturn(okJson("{\"offset\":0,\"limit\":100,\"totalFound\":0,\"content\":[]}")));
-        assertThat(source(5).fetch(canva)).isEmpty();
+        assertThat(source(5).fetch(canva).postings()).isEmpty();
     }
 
     @Test

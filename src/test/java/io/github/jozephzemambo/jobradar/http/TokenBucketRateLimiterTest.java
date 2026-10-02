@@ -84,5 +84,8 @@ class TokenBucketRateLimiterTest {
     void rejectsInvalidConfiguration() {
         assertThatThrownBy(() -> new TokenBucketRateLimiter(0, 1)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new TokenBucketRateLimiter(1, 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TokenBucketRateLimiter(Double.NaN, 1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TokenBucketRateLimiter(Double.POSITIVE_INFINITY, 1))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

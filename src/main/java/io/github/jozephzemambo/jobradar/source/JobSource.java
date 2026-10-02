@@ -2,12 +2,10 @@ package io.github.jozephzemambo.jobradar.source;
 
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
-import io.github.jozephzemambo.jobradar.domain.Posting;
-import java.util.List;
 
 /**
  * Strategy for reading one ATS. Each implementation knows a single provider's URL scheme and JSON shape; the
- * rest of the system only ever sees {@link Posting}s.
+ * rest of the system only ever sees normalized postings.
  *
  * <p>Adding a provider (Workday, SmartRecruiters, ...) is one new implementation plus one {@link Ats} constant.
  * {@link SourceRegistry} picks it up automatically through Spring's collection injection.
@@ -20,7 +18,8 @@ public interface JobSource {
     /**
      * Fetches every currently listed posting on the company's board.
      *
-     * @throws SourceException if the board can't be read; implementations never return partial results silently
+     * @return the postings, flagged incomplete if the source knows it may have missed some (never silently partial)
+     * @throws SourceException if the board can't be read at all
      */
-    List<Posting> fetch(Company company);
+    BoardSnapshot fetch(Company company);
 }

@@ -19,7 +19,7 @@ public record PostingFilter(Double minScore, Instant since, String company, Ats 
 
     public PostingFilter {
         status = status == null ? PostingStatus.OPEN : status;
-        if (minScore != null && (minScore < 0 || minScore > 1)) {
+        if (minScore != null && (!Double.isFinite(minScore) || minScore < 0 || minScore > 1)) {
             throw new IllegalArgumentException("minScore must be between 0 and 1");
         }
     }

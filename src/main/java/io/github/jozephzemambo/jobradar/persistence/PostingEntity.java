@@ -41,7 +41,7 @@ public class PostingEntity {
     @Column(nullable = false, length = 20)
     private Ats ats;
 
-    @Column(name = "external_id", nullable = false, length = 200)
+    @Column(name = "external_id", nullable = false, length = 400)
     private String externalId;
 
     @Column(name = "board_token", nullable = false, length = 100)
@@ -117,7 +117,7 @@ public class PostingEntity {
     public static PostingEntity create(Posting posting, String boardToken, Instant now) {
         PostingEntity entity = new PostingEntity();
         entity.ats = posting.ats();
-        entity.externalId = posting.externalId();
+        entity.externalId = truncate(posting.externalId(), 400);
         entity.boardToken = boardToken;
         entity.firstSeenAt = now;
         entity.refresh(posting, now);
@@ -128,23 +128,31 @@ public class PostingEntity {
      * The posting was seen again: take the latest content, bump {@code lastSeenAt}, and reopen it if it had been
      * marked closed (boards sometimes unpublish and republish the same req).
      *
+     * <p>Paged sources (Workday, SmartRecruiters) only make detail calls for the first N postings per run, so a
+     * posting described on an earlier run can come back with list fields only. Fields the new observation lacks
+     * (no description, no locations, unknown workplace, no dates) keep their stored values rather than being
+     * erased; a partial observation never overwrites a richer one.
+     *
      * @return true if the posting was closed and is now reopened
      */
     public boolean refresh(Posting posting, Instant now) {
         company = posting.company();
         title = truncate(posting.title(), 500);
         normalizedTitle = truncate(TitleNormalizer.normalize(posting.title()), 500);
-        locations = new ArrayList<>(posting.locations());
-        workplaceType = posting.workplaceType();
-        department = truncate(posting.department(), 500);
+        if (!posting.locations().isEmpty() || locations == null) {
+            locations = new ArrayList<>(posting.locations());
+        }
+        if (posting.workplaceType() != WorkplaceType.UNKNOWN || workplaceType == null) {
+            workplaceType = posting.workplaceType();
+        }
+        department = keepIfMissing(truncate(posting.department(), 500), department);
         url = truncate(posting.url(), 2000);
         canonicalUrl = truncate(posting.canonicalUrl(), 2000);
-        // Paged sources only describe their first N postings per run; keep what an earlier run learned.
         if (!posting.descriptionText().isBlank() || description == null) {
             description = truncate(posting.descriptionText(), 200000);
         }
-        compensation = truncate(posting.compensationSummary(), 500);
-        sourcePublishedAt = posting.sourcePublishedAt();
+        compensation = keepIfMissing(truncate(posting.compensationSummary(), 500), compensation);
+        sourcePublishedAt = keepIfMissing(posting.sourcePublishedAt(), sourcePublishedAt);
         lastSeenAt = now;
         boolean reopened = closedAt != null;
         closedAt = null;
@@ -174,6 +182,10 @@ public class PostingEntity {
     public Posting toPosting() {
         return new Posting(ats, externalId, company, title, locations, workplaceType, department, url, canonicalUrl,
                 description, sourcePublishedAt, compensation);
+    }
+
+    private static <T> T keepIfMissing(T observed, T stored) {
+        return observed != null ? observed : stored;
     }
 
     private static String truncate(String value, int max) {

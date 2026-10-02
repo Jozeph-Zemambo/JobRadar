@@ -27,6 +27,9 @@ class LocationNormalizerTest {
             US, Oregon, Hillsboro                 | Hillsboro, Oregon          | true
             Shenzhen, Guangdong Province, China   | shenzhen, Guangdong Province, China | true
             Toronto, ON, ca                       | Toronto                    | true
+            On-site                               | On-site                    | false
+            On site - Austin, TX                  | Austin, Texas              | true
+            In-Office                             | In office                  | false
             """)
     void overlap(String a, String b, boolean expected) {
         assertThat(LocationNormalizer.overlaps(List.of(a), List.of(b))).isEqualTo(expected);
@@ -36,6 +39,12 @@ class LocationNormalizerTest {
     void cityKeysWinOverGenericOnes() {
         assertThat(LocationNormalizer.keys(List.of("New York, NY (HQ)", "Remote (US)")))
                 .containsExactly("new york");
+    }
+
+    @Test
+    void hyphenatedWorkplaceWordsAreNotPlaces() {
+        assertThat(LocationNormalizer.keys(List.of("On-site"))).isEmpty();
+        assertThat(LocationNormalizer.keys(List.of("On-site - Austin, TX"))).containsExactly("austin");
     }
 
     @Test

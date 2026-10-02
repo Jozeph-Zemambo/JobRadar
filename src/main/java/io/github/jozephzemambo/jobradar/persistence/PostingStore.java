@@ -3,6 +3,7 @@ package io.github.jozephzemambo.jobradar.persistence;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
 import io.github.jozephzemambo.jobradar.scoring.ScoreBreakdown;
+import io.github.jozephzemambo.jobradar.source.BoardSnapshot;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,7 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
  * ones that disappeared, reopen ones that came back.
  *
  * <p>Only call this for boards that were fetched <em>successfully</em>. A failed fetch says nothing about whether
- * postings closed, so the caller must skip it rather than pass an empty list.
+ * postings closed, so the caller must skip it rather than pass an empty list. For the same reason, a fetch that
+ * may have missed postings is passed as an incomplete {@link BoardSnapshot}, which never closes anything.
  */
 @Service
 public class PostingStore {
@@ -39,6 +41,17 @@ public class PostingStore {
     @Transactional
     public SyncCounts syncBoard(Company company, List<Posting> current, Instant now,
             Function<Posting, ScoreBreakdown> scorer) {
+        return syncBoard(company, BoardSnapshot.complete(current), now, scorer);
+    }
+
+    /**
+     * As above, for a snapshot that may be incomplete: postings in it are inserted or refreshed either way, but
+     * stored postings missing from an incomplete snapshot are left open, since their absence proves nothing.
+     */
+    @Transactional
+    public SyncCounts syncBoard(Company company, BoardSnapshot snapshot, Instant now,
+            Function<Posting, ScoreBreakdown> scorer) {
+        List<Posting> current = snapshot.postings();
         Map<String, PostingEntity> existing = new HashMap<>();
         for (PostingEntity entity : repository.findByAtsAndBoardToken(company.ats(), company.boardToken())) {
             existing.put(entity.getExternalId(), entity);
@@ -68,7 +81,7 @@ public class PostingStore {
 
         int closed = 0;
         for (PostingEntity entity : existing.values()) {
-            if (!seen.contains(entity.getExternalId()) && entity.isOpen()) {
+            if (snapshot.complete() && !seen.contains(entity.getExternalId()) && entity.isOpen()) {
                 entity.close(now);
                 toSave.add(entity);
                 closed++;

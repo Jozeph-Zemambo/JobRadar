@@ -32,7 +32,7 @@ public class GreenhouseSource extends AbstractAtsSource<GreenhouseDtos.Board, Gr
 
     @Override
     protected List<GreenhouseDtos.Job> items(GreenhouseDtos.Board board) {
-        return orEmpty(board.jobs());
+        return board.jobs();
     }
 
     @Override

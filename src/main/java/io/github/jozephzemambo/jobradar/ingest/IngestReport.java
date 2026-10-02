@@ -13,7 +13,8 @@ import java.util.Map;
  * @param mode               fetch strategy used
  * @param companiesRequested boards attempted
  * @param companiesSucceeded boards read successfully (including empty ones)
- * @param failures           boards that failed, with the reason
+ * @param failures           boards that failed (fetch or storage), with the reason
+ * @param incompleteBoards   boards read but possibly not in full; nothing was marked closed for them this run
  * @param postingsFetched    postings returned by all boards before dedup
  * @param postingsByAts      postingsFetched split by ATS
  * @param sync               what the run did to stored postings (new / still listed / reopened / closed)
@@ -30,6 +31,7 @@ public record IngestReport(
         int companiesRequested,
         int companiesSucceeded,
         List<CompanyFailure> failures,
+        List<IncompleteBoard> incompleteBoards,
         int postingsFetched,
         Map<Ats, Integer> postingsByAts,
         SyncCounts sync,
@@ -44,6 +46,9 @@ public record IngestReport(
      * @param fuzzyDuplicates duplicates by the fuzzy rule
      */
     public record DedupCounts(int openPostings, long exactDuplicates, long fuzzyDuplicates) {
+    }
+
+    public record IncompleteBoard(String boardToken, Ats ats, String reason) {
     }
 
     public record CompanyFailure(String company, String boardToken, Ats ats, String errorType, String message) {

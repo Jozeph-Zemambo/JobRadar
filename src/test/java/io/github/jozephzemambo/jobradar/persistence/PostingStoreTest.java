@@ -6,6 +6,7 @@ import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
 import io.github.jozephzemambo.jobradar.scoring.ScoreBreakdown;
+import io.github.jozephzemambo.jobradar.source.BoardSnapshot;
 import io.github.jozephzemambo.jobradar.domain.WorkplaceType;
 import java.time.Duration;
 import java.time.Instant;
@@ -89,6 +90,21 @@ class PostingStoreTest {
     }
 
     @Test
+    void incompleteSnapshotNeverClosesButStillStores() {
+        store.syncBoard(palantir, List.of(posting("a", "A"), posting("b", "B")), DAY_1, UNSCORED);
+        flushAndClear();
+
+        SyncCounts counts = store.syncBoard(palantir,
+                BoardSnapshot.incomplete(List.of(posting("a", "A"), posting("c", "C")), "listing shifted"), DAY_2,
+                UNSCORED);
+        flushAndClear();
+
+        assertThat(counts).isEqualTo(new SyncCounts(1, 1, 0, 0));
+        assertThat(find("b").isOpen()).as("missing from an incomplete listing proves nothing").isTrue();
+        assertThat(find("c").getFirstSeenAt()).isEqualTo(DAY_2);
+    }
+
+    @Test
     void alreadyClosedPostingIsNotClosedAgain() {
         store.syncBoard(palantir, List.of(posting("a", "A")), DAY_1, UNSCORED);
         store.syncBoard(palantir, List.of(), DAY_2, UNSCORED);
@@ -143,6 +159,28 @@ class PostingStoreTest {
         assertThat(a.getScore()).isEqualTo(0.9);
         assertThat(a.getSkills()).containsExactly("Java");
         assertThat(a.getMatchedSkills()).containsExactly("Java");
+    }
+
+    @Test
+    void listOnlyObservationKeepsStoredLocationsWorkplaceDatesAndDepartment() {
+        Posting detailed = new Posting(Ats.LEVER, "a", "Palantir", "A", List.of("Toronto", "Seattle"),
+                WorkplaceType.REMOTE, "Dev", "https://jobs.lever.co/palantir/a", null, "Java", DAY_1, "$100K");
+        store.syncBoard(palantir, List.of(detailed), DAY_1, UNSCORED);
+        flushAndClear();
+        Posting listOnly = new Posting(Ats.LEVER, "a", "Palantir", "A renamed", List.of(), WorkplaceType.UNKNOWN, null,
+                "https://jobs.lever.co/palantir/a", null, "", null, null);
+
+        store.syncBoard(palantir, List.of(listOnly), DAY_2, UNSCORED);
+        flushAndClear();
+
+        PostingEntity a = find("a");
+        assertThat(a.getTitle()).as("present fields still update").isEqualTo("A renamed");
+        assertThat(a.getLocations()).containsExactly("Toronto", "Seattle");
+        assertThat(a.getWorkplaceType()).isEqualTo(WorkplaceType.REMOTE);
+        assertThat(a.getSourcePublishedAt()).isEqualTo(DAY_1);
+        assertThat(a.getDepartment()).isEqualTo("Dev");
+        assertThat(a.getCompensation()).isEqualTo("$100K");
+        assertThat(a.getDescription()).isEqualTo("Java");
     }
 
     @Test

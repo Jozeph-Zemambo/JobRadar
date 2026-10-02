@@ -22,7 +22,10 @@ import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
 import io.github.jozephzemambo.jobradar.domain.WorkplaceType;
+import io.github.jozephzemambo.jobradar.source.MalformedResponseException;
 import io.github.jozephzemambo.jobradar.source.UpstreamException;
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicReference;
 import java.time.Instant;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -58,12 +61,13 @@ class WorkdaySourceContractTest {
             wm.stubFor(get(urlEqualTo(CXS + paths[i])).willReturn(okJson(fixture("workday-detail-" + (i + 1) + ".json"))));
         }
 
-        List<Posting> postings = source(50).fetch(workday);
+        List<Posting> postings = source(50).fetch(workday).postings();
 
         assertThat(postings).hasSize(3);
         Posting devops = postings.get(1);
         assertThat(devops.ats()).isEqualTo(Ats.WORKDAY);
-        assertThat(devops.externalId()).isEqualTo(paths[1]);
+        assertThat(devops.externalId()).as("board-scoped: paths repeat across career sites")
+                .isEqualTo("workday/wd5/Workday" + paths[1]);
         assertThat(devops.title()).isEqualTo("Software Engineer - DevOps (US Federal)");
         assertThat(devops.locations()).containsExactly("USA.VA.Reston");
         assertThat(devops.workplaceType()).isEqualTo(WorkplaceType.HYBRID);
@@ -83,7 +87,7 @@ class WorkdaySourceContractTest {
         wm.stubFor(post(urlEqualTo(CXS + "/jobs")).withRequestBody(equalToJson("{\"offset\":40}", true, true))
                 .willReturn(okJson(page(0, 40, 5))));
 
-        List<Posting> postings = source(0).fetch(workday);
+        List<Posting> postings = source(0).fetch(workday).postings();
 
         assertThat(postings).hasSize(45);
         assertThat(postings.getFirst().locations()).containsExactly("Remote, US");
@@ -103,7 +107,7 @@ class WorkdaySourceContractTest {
                  "externalUrl":"https://workday.wd5.myworkdayjobs.com/Workday/job/p0"}}""")));
         wm.stubFor(get(urlEqualTo(CXS + "/job/p1")).willReturn(aResponse().withStatus(404)));
 
-        List<Posting> postings = source(2).fetch(workday);
+        List<Posting> postings = source(2).fetch(workday).postings();
 
         assertThat(postings).hasSize(5);
         assertThat(postings.get(0).descriptionText()).isEqualTo("Java");
@@ -115,17 +119,74 @@ class WorkdaySourceContractTest {
     }
 
     @Test
+    void postingRepeatedAcrossPagesMeansTheListingShiftedAndIsIncomplete() {
+        // A posting added while paging pushes p19 onto page two as well; whatever slid past is unknowable.
+        wm.stubFor(post(urlEqualTo(CXS + "/jobs")).withRequestBody(equalToJson("{\"offset\":0}", true, true))
+                .willReturn(okJson(page(21, 0, 20))));
+        wm.stubFor(post(urlEqualTo(CXS + "/jobs")).withRequestBody(equalToJson("{\"offset\":20}", true, true))
+                .willReturn(okJson(page(0, 19, 2))));
+
+        var snapshot = source(0).fetch(workday);
+
+        assertThat(snapshot.complete()).isFalse();
+        assertThat(snapshot.incompleteReason()).contains("shifted");
+        assertThat(snapshot.postings()).hasSize(21).extracting(Posting::externalId).doesNotHaveDuplicates();
+    }
+
+    @Test
+    void totalChangingBetweenPagesIsIncomplete() {
+        wm.stubFor(post(urlEqualTo(CXS + "/jobs")).withRequestBody(equalToJson("{\"offset\":0}", true, true))
+                .willReturn(okJson(page(25, 0, 20))));
+        wm.stubFor(post(urlEqualTo(CXS + "/jobs")).withRequestBody(equalToJson("{\"offset\":20}", true, true))
+                .willReturn(okJson(page(26, 20, 5))));
+
+        var snapshot = source(0).fetch(workday);
+
+        assertThat(snapshot.complete()).isFalse();
+        assertThat(snapshot.incompleteReason()).contains("25 -> 26");
+    }
+
+    @Test
+    void pageWithoutPostingsCollectionIsMalformed() {
+        wm.stubFor(post(urlEqualTo(CXS + "/jobs")).willReturn(okJson("{\"total\":3}")));
+        assertThatThrownBy(() -> source(0).fetch(workday)).isInstanceOf(MalformedResponseException.class);
+    }
+
+    @Test
+    void interruptingTheBoardCancelsSlowDetailCalls() throws Exception {
+        wm.stubFor(post(urlEqualTo(CXS + "/jobs")).willReturn(okJson(page(1, 0, 1))));
+        wm.stubFor(get(urlEqualTo(CXS + "/job/p0")).willReturn(okJson("{}").withFixedDelay(10_000)));
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        Thread board = Thread.ofVirtual().start(() -> {
+            try {
+                source(1).fetch(workday);
+            } catch (Throwable t) {
+                thrown.set(t);
+            }
+        });
+
+        Thread.sleep(300);
+        long interruptedAt = System.nanoTime();
+        board.interrupt();
+        board.join(Duration.ofSeconds(5));
+
+        assertThat(board.isAlive()).isFalse();
+        assertThat(Duration.ofNanos(System.nanoTime() - interruptedAt)).isLessThan(Duration.ofSeconds(3));
+        assertThat(thrown.get()).isInstanceOf(UpstreamException.class);
+    }
+
+    @Test
     void failingDetailFailsTheBoard() {
         wm.stubFor(post(urlEqualTo(CXS + "/jobs")).willReturn(okJson(page(1, 0, 1))));
         wm.stubFor(get(urlEqualTo(CXS + "/job/p0")).willReturn(aResponse().withStatus(500)));
 
-        assertThatThrownBy(() -> source(5).fetch(workday)).isInstanceOf(UpstreamException.class);
+        assertThatThrownBy(() -> source(5).fetch(workday).postings()).isInstanceOf(UpstreamException.class);
     }
 
     @Test
     void boardTokenMustBeTenantWdSite() {
         Company bad = new Company("X", Ats.WORKDAY, "workday");
-        assertThatThrownBy(() -> source(0).fetch(bad)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> source(0).fetch(bad).postings()).isInstanceOf(IllegalArgumentException.class);
         assertThat(WorkdaySource.Board.parse("intel/wd1/External"))
                 .isEqualTo(new WorkdaySource.Board("intel", "wd1", "External"));
     }

@@ -7,6 +7,10 @@ Every number here was measured on 2026-10-02 and comes from a file in [`bench/re
 JVM. Postgres 18 ran in Docker under Colima (a VM with 2 vCPU and 2 GB, reached through port forwarding).
 **Reporting:** medians, never best runs; min-max where there were enough runs.
 
+The performance figures were measured before a later round of correctness fixes (listing completeness, board
+identity, cache race, export paging). Those fixes don't touch the measured hot paths: fetching, scoring, the
+dedup inner loop, or the ranked query.
+
 ## 1. Ingest: sequential vs. platform thread pool vs. virtual threads
 
 Three fetch strategies run the same pipeline (fetch, parse, score, persist, dedup). Only the thread model
@@ -127,8 +131,9 @@ per sample out of about 38,000, that is too few to put a meaningful number on re
 2. One specialization word in a long title ("... Autonomous Pilot Integration - Weapons") still clears 0.85.
    This is the other 3.
 
-**On the real crawl** the final rule links 393 of 11,773 open postings (3.3%) as duplicates, and none of them by
-exact URL: each board gives every posting its own URL.
+**On the real crawl** the final rule links 392 of 11,773 open postings (3.3%) as duplicates, and none of them by
+exact URL: each board gives every posting its own URL. The count was 393 before a later fix stopped "On-site"
+being read as the place "site"; precision on the validation sample is unchanged at 86.0%.
 
 ## 4. API latency
 
@@ -170,12 +175,12 @@ behind a 2-vCPU VM and port forwarding. The before/after rows on the same databa
 
 ## 5. Tests and coverage
 
-229 tests (`./mvnw verify`) cover:
+250 tests (`./mvnw verify`) cover:
 - unit and parameterized tests;
 - WireMock contract tests built from recorded real responses of all five ATSes;
 - `@DataJpaTest` and `@WebMvcTest` slices;
 - one end-to-end `@SpringBootTest`;
 - a Testcontainers Postgres test.
 
-JaCoCo: **96.5% line and 87.3% branch coverage** (1,547 / 1,603 lines), with no exclusions. The build fails below
+JaCoCo: **96.7% line and 87.6% branch coverage** (1,636 / 1,691 lines), with no exclusions. The build fails below
 90% / 80%.

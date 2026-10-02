@@ -9,12 +9,14 @@ import static io.github.jozephzemambo.jobradar.source.SourceTestSupport.fixture;
 import static io.github.jozephzemambo.jobradar.source.SourceTestSupport.mapper;
 import static io.github.jozephzemambo.jobradar.source.SourceTestSupport.plainFetcher;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
 import io.github.jozephzemambo.jobradar.domain.WorkplaceType;
+import io.github.jozephzemambo.jobradar.source.MalformedResponseException;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,7 +43,7 @@ class AshbySourceContractTest {
                 .withQueryParam("includeCompensation", equalTo("true"))
                 .willReturn(okJson(fixture("ashby-ramp.json"))));
 
-        List<Posting> postings = source.fetch(ramp);
+        List<Posting> postings = source.fetch(ramp).postings();
 
         assertThat(postings).hasSize(3);
         Posting first = postings.getFirst();
@@ -69,7 +71,7 @@ class AshbySourceContractTest {
                 ]}
                 """)));
 
-        List<Posting> postings = source.fetch(ramp);
+        List<Posting> postings = source.fetch(ramp).postings();
 
         assertThat(postings).extracting(Posting::externalId).containsExactly("b");
         Posting posting = postings.getFirst();
@@ -80,8 +82,9 @@ class AshbySourceContractTest {
     }
 
     @Test
-    void missingJobsArrayIsEmptyBoard() {
+    void missingJobsArrayIsMalformedNotEmpty() {
+        // Treating a body without "jobs" as an empty board would close every stored Ramp posting.
         wm.stubFor(get(urlPathEqualTo("/posting-api/job-board/ramp")).willReturn(okJson("{\"apiVersion\":\"1\"}")));
-        assertThat(source.fetch(ramp)).isEmpty();
+        assertThatThrownBy(() -> source.fetch(ramp)).isInstanceOf(MalformedResponseException.class);
     }
 }

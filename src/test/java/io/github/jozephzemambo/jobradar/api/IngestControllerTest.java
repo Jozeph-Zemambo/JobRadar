@@ -33,7 +33,7 @@ class IngestControllerTest {
     IngestService ingestService;
 
     private final IngestReport report = new IngestReport(1L, Instant.parse("2026-10-02T06:00:00Z"), FetchMode.VIRTUAL,
-            3, 3, List.of(), 10, Map.of(), new SyncCounts(10, 0, 0, 0), new IngestReport.DedupCounts(10, 0, 1), 900,
+            3, 3, List.of(), List.of(), 10, Map.of(), new SyncCounts(10, 0, 0, 0), new IngestReport.DedupCounts(10, 0, 1), 900,
             100, 1000);
 
     @Test

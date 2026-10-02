@@ -143,6 +143,8 @@ class PostingQueryServiceTest {
     void scoreOutsideZeroToOneIsRejected() {
         assertThatThrownBy(() -> new PostingFilter(1.5, null, null, null, null, null, false))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new PostingFilter(Double.NaN, null, null, null, null, null, false))
+                .as("NaN fails every comparison, so it needs its own check").isInstanceOf(IllegalArgumentException.class);
     }
 
     private List<String> externalIds(PostingFilter filter, SortBy sort) {

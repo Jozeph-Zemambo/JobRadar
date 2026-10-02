@@ -15,7 +15,7 @@ import java.util.Map;
  * @param topCompanies     companies with the most open postings
  * @param topSkills        most-requested skills across open postings
  * @param timeToClose      how long observed postings stayed open
- * @param newLast7Days     postings first seen in the last 7 days (excluding the first crawl's backlog)
+ * @param newLast7Days     postings first seen in the last 7 days (excluding each board's first-sync backlog)
  * @param crawl            crawl history summary
  */
 public record StatsView(
@@ -43,9 +43,9 @@ public record StatsView(
     }
 
     /**
-     * Time from first seen to closed, only for postings whose opening was observed (first seen after the first
-     * crawl). Postings already open at the first crawl have an unknown start, so including them would understate
-     * how long postings stay up. Null fields mean there isn't enough history yet.
+     * Time from first seen to closed, only for postings whose opening was observed (first seen after their board's
+     * first sync). Postings already open when a board was first synced have an unknown start, so including them
+     * would understate how long postings stay up. Null fields mean there isn't enough history yet.
      *
      * @param observedClosures closed postings that qualify
      * @param medianDays       median days open

@@ -34,7 +34,7 @@ public class StatsController {
     @GetMapping("/export")
     public ResponseEntity<StreamingResponseBody> export(@RequestParam(required = false) Double minScore,
             @RequestParam(required = false) String since) {
-        if (minScore != null && (minScore < 0 || minScore > 1)) {
+        if (minScore != null && (!Double.isFinite(minScore) || minScore < 0 || minScore > 1)) {
             throw new IllegalArgumentException("minScore must be between 0 and 1");
         }
         var sinceInstant = PostingController.parseSince(since);

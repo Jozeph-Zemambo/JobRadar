@@ -142,6 +142,51 @@ class StatsServiceTest {
     }
 
     @Test
+    void boardAddedLaterDoesNotCountItsBacklogAsObservedOpenings() {
+        // Initech is first synced on day 10; its posting was already open then, so its start is unknown.
+        Company initech = new Company("Initech", Ats.ASHBY, "initech");
+        store.syncBoard(initech, List.of(p("i1", "Initech", "Analyst", null, "Java")), DAY_0.plus(Duration.ofDays(10)),
+                this::skills);
+        store.syncBoard(initech, List.of(), DAY_0.plus(Duration.ofDays(13)), this::skills);
+        em.flush();
+
+        StatsView view = stats.stats(10);
+
+        assertThat(view.closedPostings()).isEqualTo(4);
+        assertThat(view.timeToClose().observedClosures()).as("still only a and b").isEqualTo(2);
+        assertThat(view.newLast7Days()).isEqualTo(1);
+    }
+
+    @Test
+    void exportUsesKeysetSoAConcurrentChangeCannotSkipRows() throws Exception {
+        List<Posting> many = new java.util.ArrayList<>();
+        for (int i = 0; i < ExportService.BATCH + 100; i++) {
+            many.add(p("bulk" + i, "Bulkco", "Role " + i, null, "Java"));
+        }
+        store.syncBoard(new Company("Bulkco", Ats.LEVER, "bulkco"), many, NOW, this::skills);
+        em.flush();
+        long before = export.export(null, null, new ByteArrayOutputStream());
+        // After the first batch is written, an ingest closes a posting that was already exported. With offset
+        // paging the next page would start one row later and silently skip an eligible posting.
+        java.util.concurrent.atomic.AtomicBoolean changed = new java.util.concurrent.atomic.AtomicBoolean();
+        ByteArrayOutputStream out = new ByteArrayOutputStream() {
+            @Override
+            public void flush() {
+                if (changed.compareAndSet(false, true)) {
+                    em.getEntityManager().createNativeQuery(
+                            "update posting set closed_at = current_timestamp where id = (select min(id) from posting "
+                                    + "where closed_at is null and duplicate_of_id is null)").executeUpdate();
+                }
+            }
+        };
+
+        long written = export.export(null, null, out);
+
+        assertThat(written).isEqualTo(before);
+        assertThat(out.toString(StandardCharsets.UTF_8).lines().distinct().count()).isEqualTo(before);
+    }
+
+    @Test
     void skillDemandAcrossOpenNonDuplicatePostings() {
         List<StatsView.SkillDemand> skills = stats.stats(10).topSkills();
 

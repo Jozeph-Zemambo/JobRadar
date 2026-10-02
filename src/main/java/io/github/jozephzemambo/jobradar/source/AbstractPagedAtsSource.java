@@ -5,7 +5,9 @@ import io.github.jozephzemambo.jobradar.domain.Posting;
 import io.github.jozephzemambo.jobradar.http.HttpFetcher;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -25,7 +27,8 @@ import tools.jackson.databind.ObjectMapper;
  * <ul>
  *   <li><b>Paging</b> always reads the <em>whole</em> list (stopping at a short page or at the total reported by
  *   the first page; Workday reports 0 on later pages). Truncating the list would make every posting past the cut
- *   look closed to {@code PostingStore}, corrupting time-to-close. {@link #MAX_LIST} is only a runaway guard.</li>
+ *   look closed to {@code PostingStore}, corrupting time-to-close. If paging may have missed postings (the guard
+ *   at {@link #MAX_LIST}, or the listing shifting between pages) the snapshot is flagged incomplete.</li>
  *   <li><b>Details</b> are the expensive part (one request per posting), so only the first {@code maxDetails}
  *   items get one (SmartRecruiters lists newest first; Workday's default order is mostly, not strictly, by date).
  *   The rest keep list fields only, and {@code PostingEntity} never overwrites a stored description with an
@@ -70,8 +73,9 @@ public abstract class AbstractPagedAtsSource<P, I, D> implements JobSource {
     }
 
     @Override
-    public final List<Posting> fetch(Company company) {
-        List<I> items = listItems(company);
+    public final BoardSnapshot fetch(Company company) {
+        Listing<I> listing = listItems(company);
+        List<I> items = listing.items();
         List<D> details = details(company, items.subList(0, Math.min(maxDetails, items.size())));
 
         List<Posting> postings = new ArrayList<>(items.size());
@@ -86,42 +90,76 @@ public abstract class AbstractPagedAtsSource<P, I, D> implements JobSource {
                 skipped++;
             }
         }
+        String incomplete = listing.incompleteReason();
         if (skipped > 0) {
             log.warn("Skipped {} malformed postings from {} ({})", skipped, company.boardToken(), ats());
+            incomplete = skipped + " postings could not be parsed";
         }
-        return List.copyOf(postings);
+        return incomplete == null ? BoardSnapshot.complete(postings) : BoardSnapshot.incomplete(postings, incomplete);
     }
 
-    private List<I> listItems(Company company) {
-        List<I> items = new ArrayList<>();
-        int total = Integer.MAX_VALUE;
-        for (int offset = 0; items.size() < MAX_LIST; offset += pageSize) {
+    /** The paged listing, deduplicated by item id, and why it may be incomplete (null if it isn't). */
+    record Listing<I>(List<I> items, String incompleteReason) {
+    }
+
+    /**
+     * Pages through the whole listing. Postings can be added or removed while we page, which shifts later pages:
+     * an item shows up twice, or one slides past us unseen. A repeated id or a total that changes between pages
+     * is the visible symptom, so either marks the listing incomplete rather than letting a missed posting look
+     * closed.
+     */
+    private Listing<I> listItems(Company company) {
+        Map<String, I> byId = new LinkedHashMap<>();
+        String incomplete = null;
+        int firstTotal = Integer.MAX_VALUE;
+        int fetched = 0;
+        for (int offset = 0; ; offset += pageSize) {
+            if (fetched >= MAX_LIST) {
+                log.warn("{} ({}) listed {}+ postings; stopped at the guard", company.boardToken(), ats(), MAX_LIST);
+                incomplete = "stopped paging at " + MAX_LIST + " postings";
+                break;
+            }
             PageRequest request = pageRequest(company, offset, pageSize);
             byte[] body = request.jsonBody() == null
                     ? http.get(request.uri())
                     : http.postJson(request.uri(), request.jsonBody());
             P page = read(body, pageType, request.uri());
-            List<I> pageItems = page == null ? List.of() : items(page);
-            if (offset == 0 && page != null) {
-                total = total(page);
+            List<I> pageItems = page == null ? null : items(page);
+            if (pageItems == null) {
+                throw new MalformedResponseException(request.uri(),
+                        new IllegalStateException("no postings collection in page"));
             }
-            items.addAll(pageItems);
-            if (pageItems.size() < pageSize || items.size() >= total) {
+            int total = total(page);
+            if (offset == 0) {
+                firstTotal = total;
+            } else if (total > 0 && total != firstTotal && incomplete == null) {
+                // Workday reports 0 on later pages; any other change means the listing moved under us.
+                incomplete = "board total changed while paging (" + firstTotal + " -> " + total + ")";
+            }
+            for (I item : pageItems) {
+                if (byId.putIfAbsent(itemId(item), item) != null && incomplete == null) {
+                    incomplete = "listing shifted while paging (a posting appeared on two pages)";
+                }
+            }
+            fetched += pageItems.size();
+            if (pageItems.size() < pageSize || fetched >= firstTotal) {
                 break;
             }
         }
-        if (items.size() >= MAX_LIST) {
-            log.warn("{} ({}) listed {}+ postings; stopped paging at the guard", company.boardToken(), ats(), MAX_LIST);
-        }
-        return items;
+        return new Listing<>(new ArrayList<>(byId.values()), incomplete);
     }
 
+    /**
+     * Detail requests run concurrently on virtual threads. If the board's thread is interrupted, the pending
+     * detail tasks are cancelled (interrupting their HTTP calls and rate-limit waits) instead of being waited for.
+     */
     private List<D> details(Company company, List<I> items) {
         if (items.isEmpty()) {
             return List.of();
         }
-        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            List<Future<D>> futures = new ArrayList<>(items.size());
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        List<Future<D>> futures = new ArrayList<>(items.size());
+        try {
             for (I item : items) {
                 futures.add(executor.submit(() -> detail(company, item)));
             }
@@ -131,13 +169,17 @@ public abstract class AbstractPagedAtsSource<P, I, D> implements JobSource {
             }
             return details;
         } catch (InterruptedException e) {
+            futures.forEach(f -> f.cancel(true));
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted fetching details for " + company.boardToken(), e);
+            throw new UpstreamException(URI.create("detail://" + company.boardToken()), e);
         } catch (ExecutionException e) {
+            futures.forEach(f -> f.cancel(true));
             if (e.getCause() instanceof RuntimeException runtime) {
                 throw runtime;
             }
             throw new IllegalStateException(e.getCause());
+        } finally {
+            executor.shutdownNow();
         }
     }
 
@@ -167,10 +209,14 @@ public abstract class AbstractPagedAtsSource<P, I, D> implements JobSource {
 
     protected abstract PageRequest pageRequest(Company company, int offset, int limit);
 
+    /** The items on a page, or null if the page has no postings collection. */
     protected abstract List<I> items(P page);
 
-    /** Total postings as reported by the first page. */
+    /** Total postings the page reports; Workday only fills this in on the first page. */
     protected abstract int total(P page);
+
+    /** Stable id of a list item, used to spot a posting that appears on two pages. */
+    protected abstract String itemId(I item);
 
     /** Detail URL for one item, or null if the item can't have one. */
     protected abstract URI detailUrl(Company company, I item);

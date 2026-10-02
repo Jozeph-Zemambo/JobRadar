@@ -23,6 +23,7 @@ import io.github.jozephzemambo.jobradar.scoring.Profile;
 import io.github.jozephzemambo.jobradar.scoring.ScoreBreakdown;
 import io.github.jozephzemambo.jobradar.scoring.Scorer;
 import io.github.jozephzemambo.jobradar.source.BoardNotFoundException;
+import io.github.jozephzemambo.jobradar.source.BoardSnapshot;
 import io.github.jozephzemambo.jobradar.source.JobSource;
 import io.github.jozephzemambo.jobradar.source.SourceRegistry;
 import java.net.URI;
@@ -63,8 +64,8 @@ class IngestServiceTest {
         when(greenhouse.ats()).thenReturn(Ats.GREENHOUSE);
         when(lever.ats()).thenReturn(Ats.LEVER);
         when(ashby.ats()).thenReturn(Ats.ASHBY);
-        when(store.syncBoard(any(), any(), any(), any()))
-                .thenAnswer(inv -> new SyncCounts(inv.<List<?>>getArgument(1).size(), 0, 0, 0));
+        when(store.syncBoard(any(), any(BoardSnapshot.class), any(), any()))
+                .thenAnswer(inv -> new SyncCounts(inv.<BoardSnapshot>getArgument(1).postings().size(), 0, 0, 0));
         when(runs.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(dedupService.refresh()).thenReturn(new DedupResult(3, List.of(), 0));
         JobRadarProperties props = new JobRadarProperties(null, null, null, List.of(stripe, plaid, ramp), null, null);
@@ -77,9 +78,9 @@ class IngestServiceTest {
     @ParameterizedTest
     @EnumSource(FetchMode.class)
     void oneFailingBoardDoesNotAffectTheOthers(FetchMode mode) {
-        when(greenhouse.fetch(stripe)).thenReturn(List.of(posting(Ats.GREENHOUSE, "1"), posting(Ats.GREENHOUSE, "2")));
+        when(greenhouse.fetch(stripe)).thenReturn(complete(posting(Ats.GREENHOUSE, "1"), posting(Ats.GREENHOUSE, "2")));
         when(lever.fetch(plaid)).thenThrow(new BoardNotFoundException(URI.create("https://api.lever.co/v0/postings/plaid")));
-        when(ashby.fetch(ramp)).thenReturn(List.of(posting(Ats.ASHBY, "a")));
+        when(ashby.fetch(ramp)).thenReturn(complete(posting(Ats.ASHBY, "a")));
 
         IngestReport report = service.ingest(new IngestRequest(null, mode));
 
@@ -97,9 +98,9 @@ class IngestServiceTest {
         assertThat(report.wallMillis()).isGreaterThanOrEqualTo(report.fetchMillis());
         assertThat(report.sync().created()).isEqualTo(3);
         // The failed board must not be synced: an empty list would wrongly close all its postings.
-        verify(store, never()).syncBoard(eq(plaid), any(), any(), any());
+        verify(store, never()).syncBoard(eq(plaid), any(BoardSnapshot.class), any(), any());
         ArgumentCaptor<Function<Posting, ScoreBreakdown>> scoring = ArgumentCaptor.captor();
-        verify(store).syncBoard(eq(stripe), eq(List.of(posting(Ats.GREENHOUSE, "1"), posting(Ats.GREENHOUSE, "2"))),
+        verify(store).syncBoard(eq(stripe), eq(complete(posting(Ats.GREENHOUSE, "1"), posting(Ats.GREENHOUSE, "2"))),
                 eq(NOW), scoring.capture());
         assertThat(scoring.getValue().apply(posting(Ats.GREENHOUSE, "1")).score()).isEqualTo(0.5);
         verify(runs).save(any(IngestRunEntity.class));
@@ -108,10 +109,76 @@ class IngestServiceTest {
     }
 
     @Test
+    void incompleteBoardIsSyncedAndReported() {
+        BoardSnapshot partial = BoardSnapshot.incomplete(List.of(posting(Ats.ASHBY, "a")), "1 postings could not be parsed");
+        when(greenhouse.fetch(any())).thenReturn(complete());
+        when(lever.fetch(any())).thenReturn(complete());
+        when(ashby.fetch(ramp)).thenReturn(partial);
+
+        IngestReport report = service.ingest(IngestRequest.all());
+
+        verify(store).syncBoard(eq(ramp), eq(partial), any(), any());
+        assertThat(report.incompleteBoards()).containsExactly(
+                new IngestReport.IncompleteBoard("ramp", Ats.ASHBY, "1 postings could not be parsed"));
+        assertThat(report.failures()).isEmpty();
+    }
+
+    @Test
+    void databaseErrorOnOneBoardIsReportedAndTheRestStillSyncAndNotify() {
+        when(greenhouse.fetch(any())).thenReturn(complete(posting(Ats.GREENHOUSE, "1")));
+        when(lever.fetch(any())).thenReturn(complete(posting(Ats.LEVER, "2")));
+        when(ashby.fetch(any())).thenReturn(complete(posting(Ats.ASHBY, "3")));
+        when(store.syncBoard(eq(stripe), any(BoardSnapshot.class), any(), any()))
+                .thenThrow(new IllegalStateException("constraint violated"));
+
+        IngestReport report = service.ingest(IngestRequest.all());
+
+        assertThat(report.failures()).singleElement().satisfies(f -> {
+            assertThat(f.boardToken()).isEqualTo("stripe");
+            assertThat(f.errorType()).isEqualTo("PersistenceFailure");
+        });
+        assertThat(report.sync().created()).isEqualTo(2);
+        verify(events).publishEvent(any(IngestCompletedEvent.class));
+    }
+
+    @Test
+    void dataWrittenBeforeALaterCrashStillNotifiesListeners() {
+        when(greenhouse.fetch(any())).thenReturn(complete(posting(Ats.GREENHOUSE, "1")));
+        when(lever.fetch(any())).thenReturn(complete());
+        when(ashby.fetch(any())).thenReturn(complete());
+        when(dedupService.refresh()).thenThrow(new IllegalStateException("db down"));
+
+        assertThatThrownBy(() -> service.ingest(IngestRequest.all())).hasMessage("db down");
+
+        // Boards were committed before the crash, so cached stats must still be invalidated.
+        verify(events).publishEvent(new IngestCompletedEvent(null));
+    }
+
+    @Test
+    void sameTokenOnTwoAtsKeepsBothBoards() {
+        Company ghAcme = new Company("Acme", Ats.GREENHOUSE, "acme");
+        Company lvAcme = new Company("Acme", Ats.LEVER, "acme");
+        JobRadarProperties props = new JobRadarProperties(null, null, null, List.of(ghAcme, lvAcme), null, null);
+        IngestService twoBoards = new IngestService(new SourceRegistry(List.of(greenhouse, lever, ashby)),
+                List.of(new SequentialFetchStrategy()), store, dedupService, scorer, profile, runs, props,
+                Clock.fixed(NOW, ZoneOffset.UTC), events);
+        when(greenhouse.fetch(any())).thenReturn(complete());
+        when(lever.fetch(any())).thenReturn(complete());
+
+        assertThat(twoBoards.configuredCompanies()).containsExactly(ghAcme, lvAcme);
+        assertThat(twoBoards.ingest(new IngestRequest(List.of("acme"), FetchMode.SEQUENTIAL)).companiesRequested())
+                .isEqualTo(2);
+        assertThat(twoBoards.ingest(new IngestRequest(List.of("LEVER:acme"), FetchMode.SEQUENTIAL))
+                .companiesRequested()).isEqualTo(1);
+        verify(greenhouse, org.mockito.Mockito.times(1)).fetch(ghAcme);
+        verify(lever, org.mockito.Mockito.times(2)).fetch(lvAcme);
+    }
+
+    @Test
     void unexpectedBugInOneSourceIsAlsoIsolated() {
         when(greenhouse.fetch(any())).thenThrow(new IllegalStateException("boom"));
-        when(lever.fetch(any())).thenReturn(List.of());
-        when(ashby.fetch(any())).thenReturn(List.of());
+        when(lever.fetch(any())).thenReturn(complete());
+        when(ashby.fetch(any())).thenReturn(complete());
 
         IngestReport report = service.ingest(IngestRequest.all());
 
@@ -121,7 +188,7 @@ class IngestServiceTest {
 
     @Test
     void subsetOfCompaniesOnlyFetchesThose() {
-        when(ashby.fetch(ramp)).thenReturn(List.of());
+        when(ashby.fetch(ramp)).thenReturn(complete());
 
         IngestReport report = service.ingest(new IngestRequest(List.of("ramp", "ramp"), FetchMode.SEQUENTIAL));
 
@@ -144,6 +211,10 @@ class IngestServiceTest {
         assertThat(request.mode()).isEqualTo(FetchMode.VIRTUAL);
         assertThat(request.companies()).isEmpty();
         assertThat(service.configuredCompanies()).containsExactly(stripe, plaid, ramp);
+    }
+
+    static BoardSnapshot complete(Posting... postings) {
+        return BoardSnapshot.complete(List.of(postings));
     }
 
     static Posting posting(Ats ats, String id) {

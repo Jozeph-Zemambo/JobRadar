@@ -45,7 +45,12 @@ public class SmartRecruitersSource extends AbstractPagedAtsSource<SmartRecruiter
 
     @Override
     protected List<SmartRecruitersDtos.ListItem> items(SmartRecruitersDtos.Page page) {
-        return page.content() == null ? List.of() : page.content();
+        return page.content();
+    }
+
+    @Override
+    protected String itemId(SmartRecruitersDtos.ListItem item) {
+        return String.valueOf(item.id());
     }
 
     @Override

@@ -44,7 +44,7 @@ class LeverSourceContractTest {
                 .withQueryParam("mode", equalTo("json"))
                 .willReturn(okJson(fixture("lever-spotify.json"))));
 
-        List<Posting> postings = source.fetch(spotify);
+        List<Posting> postings = source.fetch(spotify).postings();
 
         assertThat(postings).hasSize(3);
         Posting first = postings.getFirst();
@@ -70,7 +70,7 @@ class LeverSourceContractTest {
     void emptyArrayMeansEmptyBoard() {
         // Seen live for mistral, kraken, whoop: 200 with [] rather than 404.
         wm.stubFor(get(urlPathEqualTo("/v0/postings/spotify")).willReturn(okJson("[]")));
-        assertThat(source.fetch(spotify)).isEmpty();
+        assertThat(source.fetch(spotify).postings()).isEmpty();
     }
 
     @Test
@@ -78,7 +78,7 @@ class LeverSourceContractTest {
         // Seen live for plaid and netflix.
         wm.stubFor(get(urlPathEqualTo("/v0/postings/spotify"))
                 .willReturn(aResponse().withStatus(404).withBody("{\"ok\":false,\"error\":\"Document not found\"}")));
-        assertThatThrownBy(() -> source.fetch(spotify)).isInstanceOf(BoardNotFoundException.class);
+        assertThatThrownBy(() -> source.fetch(spotify).postings()).isInstanceOf(BoardNotFoundException.class);
     }
 
     @Test
@@ -89,7 +89,7 @@ class LeverSourceContractTest {
                   "salaryRange":{"currency":"CAD","interval":"per-year-salary","min":120000,"max":160000}}]
                 """)));
 
-        Posting posting = source.fetch(spotify).getFirst();
+        Posting posting = source.fetch(spotify).postings().getFirst();
 
         assertThat(posting.locations()).containsExactly("Toronto");
         assertThat(posting.department()).isEqualTo("Platform");

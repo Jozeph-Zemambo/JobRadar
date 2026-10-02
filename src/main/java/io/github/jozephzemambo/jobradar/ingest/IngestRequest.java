@@ -5,7 +5,8 @@ import java.util.List;
 /**
  * What to ingest and how.
  *
- * @param companies board tokens to fetch; null or empty means every configured company
+ * @param companies board tokens to fetch ("stripe", or "LEVER:acme" when a token exists on two ATSes); null or
+ *                  empty means every configured company
  * @param mode      fetch strategy; null means {@link FetchMode#VIRTUAL}
  */
 public record IngestRequest(List<String> companies, FetchMode mode) {

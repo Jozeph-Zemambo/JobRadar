@@ -32,7 +32,7 @@ public class AshbySource extends AbstractAtsSource<AshbyDtos.Board, AshbyDtos.Jo
 
     @Override
     protected List<AshbyDtos.Job> items(AshbyDtos.Board board) {
-        return orEmpty(board.jobs());
+        return board.jobs();
     }
 
     @Override

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
+import java.util.concurrent.atomic.AtomicLong;
 import io.github.jozephzemambo.jobradar.ingest.IngestCompletedEvent;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -30,6 +31,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Results are cached per {@code topN} and evicted when an ingest completes: the underlying data only changes
  * during ingest, and recomputing scans every open posting's skills. The one time-dependent field
  * ({@code newLast7Days}) can therefore be up to one crawl interval stale, which a daily crawl keeps to a day.
+ *
+ * <p>"Observed" openings (for time-to-close and new-this-week) are postings first seen after their own board's
+ * first sync, so a board added later doesn't count its existing backlog as new.
  */
 @Service
 @Transactional(readOnly = true)
@@ -52,7 +56,10 @@ public class StatsService {
         this.clock = clock;
     }
 
-    @Cacheable(cacheNames = CACHE, key = "#topN")
+    /** Bumped on every ingest; part of the cache key so a computation that raced an ingest is never served. */
+    private final AtomicLong dataVersion = new AtomicLong();
+
+    @Cacheable(cacheNames = CACHE, key = "#root.target.dataVersion() + ':' + #topN")
     public StatsView stats(int topN) {
         if (topN < 1 || topN > 100) {
             throw new IllegalArgumentException("top must be between 1 and 100");
@@ -60,7 +67,6 @@ public class StatsService {
         long open = postings.countByClosedAtIsNull() - postings.countByClosedAtIsNullAndDuplicateOfIdIsNotNull();
         Optional<IngestRunEntity> first = runs.findFirstByOrderByStartedAtAsc();
         Optional<IngestRunEntity> last = runs.findFirstByOrderByStartedAtDesc();
-        Instant cutoff = first.map(IngestRunEntity::getStartedAt).orElse(Instant.EPOCH);
 
         return new StatsView(
                 open,
@@ -72,17 +78,27 @@ public class StatsService {
                         .map(r -> new StatsView.Count((String) r[0], ((Number) r[1]).longValue()))
                         .toList(),
                 topSkills(topN, open),
-                timeToClose(cutoff),
-                first.isEmpty() ? 0 : postings.countFirstSeenAfter(clock.instant().minus(Duration.ofDays(7)), cutoff),
+                timeToClose(),
+                postings.countObservedOpeningsSince(clock.instant().minus(Duration.ofDays(7))),
                 new StatsView.Crawl(runs.count(), first.map(IngestRunEntity::getStartedAt).orElse(null),
                         last.map(IngestRunEntity::getStartedAt).orElse(null),
                         last.map(IngestRunEntity::getCompaniesRequested).orElse(null)));
     }
 
+    /**
+     * Invalidates cached stats. Eviction alone isn't enough: a request that started before the ingest finished can
+     * still be computing from old data and would cache it after the eviction. Bumping the version first means that
+     * stale result lands under the old key, which no later request reads.
+     */
     @EventListener
     @CacheEvict(cacheNames = CACHE, allEntries = true)
     public void onIngestCompleted(IngestCompletedEvent event) {
-        // Eviction is the whole job; the annotation does it.
+        dataVersion.incrementAndGet();
+    }
+
+    /** Current data version, used in the cache key. */
+    public long dataVersion() {
+        return dataVersion.get();
     }
 
     /** Counts skill mentions in Java, then keeps the top N with a size-bounded min-heap: O(skills * log N). */
@@ -112,9 +128,9 @@ public class StatsService {
                 .toList();
     }
 
-    StatsView.TimeToClose timeToClose(Instant cutoff) {
+    StatsView.TimeToClose timeToClose() {
         List<Double> days = new ArrayList<>();
-        for (Object[] row : postings.closedLifetimesFirstSeenAfter(cutoff)) {
+        for (Object[] row : postings.closedLifetimesOfObservedOpenings()) {
             Duration open = Duration.between((Instant) row[0], (Instant) row[1]);
             days.add(open.toSeconds() / SECONDS_PER_DAY);
         }

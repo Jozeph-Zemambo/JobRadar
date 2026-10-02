@@ -62,6 +62,6 @@ class CrawlRunnerTest {
 
     private static IngestReport report(int succeeded, List<IngestReport.CompanyFailure> failures) {
         return new IngestReport(1L, Instant.EPOCH, FetchMode.VIRTUAL, succeeded + failures.size(), succeeded,
-                failures, 0, Map.of(), SyncCounts.ZERO, new IngestReport.DedupCounts(0, 0, 0), 0, 0, 0);
+                failures, List.of(), 0, Map.of(), SyncCounts.ZERO, new IngestReport.DedupCounts(0, 0, 0), 0, 0, 0);
     }
 }

@@ -37,8 +37,9 @@ public class TokenBucketRateLimiter implements RateLimiter {
     }
 
     public TokenBucketRateLimiter(double permitsPerSecond, int burst, LongSupplier nanoClock, Sleeper sleeper) {
-        if (permitsPerSecond <= 0) {
-            throw new IllegalArgumentException("permitsPerSecond must be positive");
+        if (!Double.isFinite(permitsPerSecond) || permitsPerSecond <= 0) {
+            // NaN fails every comparison, so "<= 0" alone would let NaN through and silently disable throttling.
+            throw new IllegalArgumentException("permitsPerSecond must be a positive number");
         }
         if (burst < 1) {
             throw new IllegalArgumentException("burst must be at least 1");

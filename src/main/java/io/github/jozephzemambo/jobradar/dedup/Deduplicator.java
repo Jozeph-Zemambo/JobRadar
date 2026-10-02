@@ -6,6 +6,7 @@ import io.github.jozephzemambo.jobradar.normalize.TitleNormalizer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -112,7 +113,28 @@ public class Deduplicator {
                 }
             }
         }
-        return new DedupResult(candidates.size(), List.copyOf(duplicates), pairs);
+        return new DedupResult(candidates.size(), rootCanonicals(duplicates), pairs);
+    }
+
+    /**
+     * Points every duplicate at the root of its chain. A posting can be an exact-URL duplicate of a posting that
+     * the fuzzy pass then links to another one (3 -> 2 -> 1); stored as-is, posting 1's detail view would miss 3.
+     */
+    private static List<DedupResult.Duplicate> rootCanonicals(List<DedupResult.Duplicate> duplicates) {
+        Map<DedupCandidate, DedupCandidate> parent = new HashMap<>();
+        for (DedupResult.Duplicate d : duplicates) {
+            parent.put(d.duplicate(), d.canonical());
+        }
+        List<DedupResult.Duplicate> resolved = new ArrayList<>(duplicates.size());
+        for (DedupResult.Duplicate d : duplicates) {
+            DedupCandidate root = d.canonical();
+            while (parent.containsKey(root)) {
+                root = parent.get(root);
+            }
+            resolved.add(root == d.canonical() ? d
+                    : new DedupResult.Duplicate(d.duplicate(), root, d.reason(), d.titleSimilarity()));
+        }
+        return List.copyOf(resolved);
     }
 
     /** The fuzzy rule for one pair, exposed so the evaluation harness scores exactly what production does. */

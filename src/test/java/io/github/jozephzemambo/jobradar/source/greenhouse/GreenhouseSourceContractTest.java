@@ -47,7 +47,7 @@ class GreenhouseSourceContractTest {
                 .withQueryParam("content", equalTo("true"))
                 .willReturn(okJson(fixture("greenhouse-discord.json"))));
 
-        List<Posting> postings = source.fetch(discord);
+        List<Posting> postings = source.fetch(discord).postings();
 
         assertThat(postings).hasSize(3);
         Posting first = postings.getFirst();
@@ -71,6 +71,28 @@ class GreenhouseSourceContractTest {
     }
 
     @Test
+    void bodyWithoutJobsOrNullBodyIsMalformedNotAnEmptyBoard() {
+        wm.stubFor(get(urlPathEqualTo("/v1/boards/discord/jobs")).willReturn(okJson("{}")));
+        assertThatThrownBy(() -> source.fetch(discord)).isInstanceOf(MalformedResponseException.class);
+
+        wm.stubFor(get(urlPathEqualTo("/v1/boards/discord/jobs")).willReturn(okJson("null")));
+        assertThatThrownBy(() -> source.fetch(discord)).isInstanceOf(MalformedResponseException.class);
+    }
+
+    @Test
+    void skippingAMalformedPostingMarksTheSnapshotIncomplete() {
+        wm.stubFor(get(urlPathEqualTo("/v1/boards/discord/jobs")).willReturn(okJson("""
+                {"jobs":[{"id":1,"title":"Engineer","absolute_url":"https://x.io/1"},{"id":456,"title":null}]}
+                """)));
+
+        var snapshot = source.fetch(discord);
+
+        assertThat(snapshot.complete()).isFalse();
+        assertThat(snapshot.incompleteReason()).contains("1 postings could not be parsed");
+        assertThat(snapshot.postings()).extracting(Posting::externalId).containsExactly("1");
+    }
+
+    @Test
     void ignoresUnknownFieldsAndSkipsPostingsMissingRequiredData() {
         wm.stubFor(get(urlPathEqualTo("/v1/boards/discord/jobs")).willReturn(okJson("""
                 {"jobs":[
@@ -80,7 +102,7 @@ class GreenhouseSourceContractTest {
                 ],"meta":{"total":3}}
                 """)));
 
-        List<Posting> postings = source.fetch(discord);
+        List<Posting> postings = source.fetch(discord).postings();
 
         assertThat(postings).extracting(Posting::externalId).containsExactly("1");
         assertThat(postings.getFirst().sourcePublishedAt()).isNull();
@@ -89,20 +111,20 @@ class GreenhouseSourceContractTest {
     @Test
     void emptyBoardYieldsNoPostings() {
         wm.stubFor(get(urlPathEqualTo("/v1/boards/discord/jobs")).willReturn(okJson("{\"jobs\":[],\"meta\":{\"total\":0}}")));
-        assertThat(source.fetch(discord)).isEmpty();
+        assertThat(source.fetch(discord).postings()).isEmpty();
     }
 
     @Test
     void notFoundBecomesBoardNotFound() {
         wm.stubFor(get(urlPathEqualTo("/v1/boards/discord/jobs")).willReturn(aResponse().withStatus(404)));
-        assertThatThrownBy(() -> source.fetch(discord)).isInstanceOf(BoardNotFoundException.class);
+        assertThatThrownBy(() -> source.fetch(discord).postings()).isInstanceOf(BoardNotFoundException.class);
     }
 
     @Test
     void htmlInsteadOfJsonIsMalformed() {
         wm.stubFor(get(urlPathEqualTo("/v1/boards/discord/jobs"))
                 .willReturn(aResponse().withStatus(200).withBody("<html>maintenance</html>")));
-        assertThatThrownBy(() -> source.fetch(discord)).isInstanceOf(MalformedResponseException.class);
+        assertThatThrownBy(() -> source.fetch(discord).postings()).isInstanceOf(MalformedResponseException.class);
     }
 
     @Test
@@ -110,7 +132,7 @@ class GreenhouseSourceContractTest {
         wm.stubFor(get(urlPathEqualTo("/v1/boards/discord/jobs"))
                 .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "7")));
 
-        assertThatThrownBy(() -> source.fetch(discord))
+        assertThatThrownBy(() -> source.fetch(discord).postings())
                 .isInstanceOfSatisfying(UpstreamException.class, e -> {
                     assertThat(e.statusCode()).isEqualTo(429);
                     assertThat(e.retryable()).isTrue();

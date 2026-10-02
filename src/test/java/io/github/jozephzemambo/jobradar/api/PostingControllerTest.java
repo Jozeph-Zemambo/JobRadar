@@ -78,6 +78,7 @@ class PostingControllerTest {
     @Test
     void outOfRangeScoreAndUnknownEnumAre400() throws Exception {
         mvc.perform(get("/api/postings").param("minScore", "3")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/postings").param("minScore", "NaN")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/postings").param("ats", "LINKEDIN"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("Invalid value 'LINKEDIN' for parameter 'ats'"));

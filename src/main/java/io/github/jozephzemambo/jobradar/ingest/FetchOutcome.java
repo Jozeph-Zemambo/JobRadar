@@ -1,9 +1,8 @@
 package io.github.jozephzemambo.jobradar.ingest;
 
 import io.github.jozephzemambo.jobradar.domain.Company;
-import io.github.jozephzemambo.jobradar.domain.Posting;
+import io.github.jozephzemambo.jobradar.source.BoardSnapshot;
 import java.time.Duration;
-import java.util.List;
 
 /**
  * Result of fetching one board. Sealed, so a {@code switch} over it is checked for exhaustiveness by the compiler.
@@ -15,10 +14,7 @@ public sealed interface FetchOutcome {
 
     Duration elapsed();
 
-    record Success(Company company, List<Posting> postings, Duration elapsed) implements FetchOutcome {
-        public Success {
-            postings = List.copyOf(postings);
-        }
+    record Success(Company company, BoardSnapshot snapshot, Duration elapsed) implements FetchOutcome {
     }
 
     record Failure(Company company, String errorType, String message, Duration elapsed) implements FetchOutcome {

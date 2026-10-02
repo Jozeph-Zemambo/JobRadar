@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
+import io.github.jozephzemambo.jobradar.source.BoardSnapshot;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -36,7 +37,7 @@ class FetchStrategyTest {
         } finally {
             inFlight.decrementAndGet();
         }
-        return new FetchOutcome.Success(company, List.of(), Duration.ZERO);
+        return new FetchOutcome.Success(company, BoardSnapshot.complete(List.of()), Duration.ZERO);
     };
 
     @Test
@@ -70,7 +71,7 @@ class FetchStrategyTest {
             if (Thread.currentThread().isVirtual()) {
                 virtualCount.incrementAndGet();
             }
-            return new FetchOutcome.Success(company, List.of(), Duration.ZERO);
+            return new FetchOutcome.Success(company, BoardSnapshot.complete(List.of()), Duration.ZERO);
         });
         assertThat(virtualCount).hasValue(20);
     }

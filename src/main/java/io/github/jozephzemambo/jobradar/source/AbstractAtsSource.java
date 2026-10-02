@@ -42,7 +42,7 @@ public abstract class AbstractAtsSource<R, I> implements JobSource {
     }
 
     @Override
-    public final List<Posting> fetch(Company company) {
+    public final BoardSnapshot fetch(Company company) {
         URI uri = boardUrl(company);
         byte[] body = http.get(uri);
         R response;
@@ -51,8 +51,12 @@ public abstract class AbstractAtsSource<R, I> implements JobSource {
         } catch (JacksonException e) {
             throw new MalformedResponseException(uri, e);
         }
-
-        List<I> items = response == null ? List.of() : items(response);
+        // A 200 whose body is null or lacks the postings collection is a broken response, not an empty board:
+        // treating it as empty would mark every stored posting on the board as closed.
+        List<I> items = response == null ? null : items(response);
+        if (items == null) {
+            throw new MalformedResponseException(uri, new IllegalStateException("no postings collection in body"));
+        }
         List<Posting> postings = new ArrayList<>(items.size());
         int skipped = 0;
         for (I item : items) {
@@ -67,15 +71,17 @@ public abstract class AbstractAtsSource<R, I> implements JobSource {
             }
         }
         if (skipped > 0) {
+            // A skipped posting may be one we already store; without it, the listing can't prove anything closed.
             log.warn("Skipped {} malformed postings from {} ({})", skipped, company.boardToken(), ats());
+            return BoardSnapshot.incomplete(postings, skipped + " postings could not be parsed");
         }
-        return List.copyOf(postings);
+        return BoardSnapshot.complete(postings);
     }
 
     /** Public board URL for the company. */
     protected abstract URI boardUrl(Company company);
 
-    /** The posting items inside the top-level response. */
+    /** The posting items inside the top-level response, or null if the response has no postings collection. */
     protected abstract List<I> items(R response);
 
     /** Maps one provider item to a {@link Posting}, or returns null to deliberately drop it (e.g. unlisted). */

@@ -68,10 +68,21 @@ public interface PostingRepository extends JpaRepository<PostingEntity, Long>,
     @Query("select p.skills from PostingEntity p where p.closedAt is null and p.duplicateOfId is null")
     List<Object> openSkillLists();
 
-    /** First-seen and closed times of postings whose opening JobRadar observed (first seen after the cutoff). */
-    @Query("select p.firstSeenAt, p.closedAt from PostingEntity p where p.closedAt is not null and p.firstSeenAt > :cutoff")
-    List<Object[]> closedLifetimesFirstSeenAfter(@Param("cutoff") Instant cutoff);
+    /**
+     * First-seen and closed times of closed postings whose opening JobRadar actually observed: first seen after
+     * their own board's first sync. A board's first sync records its backlog, whose real start dates are unknown;
+     * a board added months after tracking began would otherwise bring its whole backlog in as "new".
+     */
+    @Query("""
+            select p.firstSeenAt, p.closedAt from PostingEntity p
+            where p.closedAt is not null and p.firstSeenAt > (
+                select min(q.firstSeenAt) from PostingEntity q where q.ats = p.ats and q.boardToken = p.boardToken)""")
+    List<Object[]> closedLifetimesOfObservedOpenings();
 
-    @Query("select count(p) from PostingEntity p where p.firstSeenAt > :since and p.firstSeenAt > :cutoff")
-    long countFirstSeenAfter(@Param("since") Instant since, @Param("cutoff") Instant cutoff);
+    /** Postings first seen after {@code since} that were genuinely new (not part of their board's first sync). */
+    @Query("""
+            select count(p) from PostingEntity p
+            where p.firstSeenAt > :since and p.firstSeenAt > (
+                select min(q.firstSeenAt) from PostingEntity q where q.ats = p.ats and q.boardToken = p.boardToken)""")
+    long countObservedOpeningsSince(@Param("since") Instant since);
 }
