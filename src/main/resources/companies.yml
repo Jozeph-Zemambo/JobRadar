@@ -55,3 +55,7 @@ jobradar:
     - { name: Workday,     ats: WORKDAY, board-token: workday/wd5/Workday }
     - { name: Adobe,       ats: WORKDAY, board-token: adobe/wd5/external_experienced }
     - { name: Intel,       ats: WORKDAY, board-token: intel/wd1/External }
+    # SmartRecruiters (same paged + detail pattern; all companies share one API host)
+    - { name: Canva,       ats: SMARTRECRUITERS, board-token: Canva }
+    - { name: Ubisoft,     ats: SMARTRECRUITERS, board-token: Ubisoft2 }
+    - { name: Western Digital, ats: SMARTRECRUITERS, board-token: WesternDigital }

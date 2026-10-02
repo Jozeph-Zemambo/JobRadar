@@ -29,13 +29,14 @@ public record JobRadarProperties(
 
     /**
      * Base URLs per ATS (overridden in tests and benchmarks to point at a local WireMock), and how many postings
-     * per paged board (Workday) get a detail request for their description.
+     * per paged board (Workday, SmartRecruiters) get a detail request for their description.
      */
     public record Sources(
             @DefaultValue("https://boards-api.greenhouse.io") String greenhouseBaseUrl,
             @DefaultValue("https://api.lever.co") String leverBaseUrl,
             @DefaultValue("https://api.ashbyhq.com") String ashbyBaseUrl,
             @DefaultValue("https://{tenant}.{wd}.myworkdayjobs.com") String workdayBaseUrlTemplate,
+            @DefaultValue("https://api.smartrecruiters.com") String smartRecruitersBaseUrl,
             @DefaultValue("50") int maxDetailsPerBoard) {
     }
 

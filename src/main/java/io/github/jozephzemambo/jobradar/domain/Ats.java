@@ -8,5 +8,6 @@ public enum Ats {
     GREENHOUSE,
     LEVER,
     ASHBY,
-    WORKDAY
+    WORKDAY,
+    SMARTRECRUITERS
 }

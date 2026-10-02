@@ -7,6 +7,7 @@ import io.github.jozephzemambo.jobradar.http.TokenBucketRateLimiter;
 import io.github.jozephzemambo.jobradar.source.ashby.AshbySource;
 import io.github.jozephzemambo.jobradar.source.greenhouse.GreenhouseSource;
 import io.github.jozephzemambo.jobradar.source.lever.LeverSource;
+import io.github.jozephzemambo.jobradar.source.smartrecruiters.SmartRecruitersSource;
 import io.github.jozephzemambo.jobradar.source.workday.WorkdaySource;
 import java.net.http.HttpClient;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -66,6 +67,12 @@ public class SourceConfig {
     @Bean
     WorkdaySource workdaySource(HttpFetcher http, ObjectMapper mapper, JobRadarProperties props) {
         return new WorkdaySource(http, mapper, props.sources().workdayBaseUrlTemplate(),
+                props.sources().maxDetailsPerBoard());
+    }
+
+    @Bean
+    SmartRecruitersSource smartRecruitersSource(HttpFetcher http, ObjectMapper mapper, JobRadarProperties props) {
+        return new SmartRecruitersSource(http, mapper, props.sources().smartRecruitersBaseUrl(),
                 props.sources().maxDetailsPerBoard());
     }
 }
