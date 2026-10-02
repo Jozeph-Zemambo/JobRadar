@@ -33,4 +33,16 @@ class TitleNormalizerTest {
         assertThat(TitleNormalizer.tokens("Engineer, Platform Engineer"))
                 .containsExactly("engineer", "platform");
     }
+
+    @ParameterizedTest(name = "\"{0}\" -> {1}")
+    @CsvSource(delimiter = '|', textBlock = """
+            Sr. Software Engineer           | senior
+            Software Engineer II            | 2
+            Staff Engineer, Tech Lead       | staff,lead
+            Software Engineer               | ''
+            Mid/Senior SRE                  | mid,senior
+            """)
+    void levelTokens(String title, String expected) {
+        assertThat(String.join(",", TitleNormalizer.levelTokens(title))).isEqualTo(expected);
+    }
 }

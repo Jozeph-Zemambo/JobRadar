@@ -37,8 +37,8 @@ class LocationNormalizerTest {
     }
 
     @Test
-    void missingLocationsOverlapButOneSidedDoesNot() {
-        assertThat(LocationNormalizer.overlaps(List.of(), null)).isTrue();
+    void missingLocationsNeverOverlap() {
+        assertThat(LocationNormalizer.overlaps(List.of(), null)).isFalse();
         assertThat(LocationNormalizer.overlaps(List.of(), List.of("London"))).isFalse();
     }
 }

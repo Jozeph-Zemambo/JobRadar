@@ -54,6 +54,8 @@ class DeduplicatorTest {
             Software Engineer                 | Software Engineer                | London        | London   | Ads  | Search
             Software Engineer II              | Software Engineer III            | Remote (US)   | US-Remote| Eng  | Eng
             Account Executive                 | Account Executive                | Remote (US)   | Dublin   | Sales| Sales
+            Software Engineer, Consumer Revenue | Senior Software Engineer, Consumer Revenue | SF | SF | Eng | Eng
+            Engineer, Platform                | Engineer, Platform               | ''            | ''       | Eng  | Eng
             """)
     void hardNegativesAreNotMerged(String titleA, String titleB, String locA, String locB, String depA,
             String depB) {
@@ -99,6 +101,7 @@ class DeduplicatorTest {
     @Test
     void clusteringIsNotTransitive() {
         // A~B (0.75) and B~C (0.8) at threshold 0.7, but A~C is only 0.6: C must not be chained onto A.
+        // (No level words in these titles, so only similarity decides.)
         Deduplicator loose = new Deduplicator(new TitleTokenJaccard(), 0.7);
         DedupCandidate a = c("Co", "alpha beta gamma", "Paris", null);
         DedupCandidate b = c("Co", "alpha beta gamma delta", "Paris", null);

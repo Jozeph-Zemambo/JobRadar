@@ -29,6 +29,14 @@ public final class TitleNormalizer {
             Map.entry("iii", "3"),
             Map.entry("iv", "4"));
 
+    /**
+     * Words that set a role's level rather than its function. Two titles that differ only in these
+     * ("Senior Software Engineer" vs "Software Engineer") are different openings, even though token overlap is high.
+     */
+    private static final Set<String> LEVEL_WORDS = Set.of(
+            "intern", "internship", "junior", "associate", "mid", "senior", "staff", "principal", "lead",
+            "distinguished", "head", "director", "vp", "chief", "1", "2", "3", "4", "5");
+
     private TitleNormalizer() {
     }
 
@@ -55,5 +63,12 @@ public final class TitleNormalizer {
             return Set.of();
         }
         return new LinkedHashSet<>(Arrays.asList(normalized.split(" ")));
+    }
+
+    /** The level words in a title, e.g. {"senior"} for "Sr. Software Engineer", {"2"} for "Engineer II". */
+    public static Set<String> levelTokens(String title) {
+        Set<String> levels = new LinkedHashSet<>(tokens(title));
+        levels.retainAll(LEVEL_WORDS);
+        return levels;
     }
 }

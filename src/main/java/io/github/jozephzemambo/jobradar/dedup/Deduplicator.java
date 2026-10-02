@@ -2,6 +2,7 @@ package io.github.jozephzemambo.jobradar.dedup;
 
 import io.github.jozephzemambo.jobradar.config.JobRadarProperties;
 import io.github.jozephzemambo.jobradar.normalize.LocationNormalizer;
+import io.github.jozephzemambo.jobradar.normalize.TitleNormalizer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -19,8 +20,9 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li><b>Exact:</b> identical canonical URL.</li>
  *   <li><b>Fuzzy:</b> within one company (blocking keeps this from being all-pairs over every posting), the title
- *   similarity is at least the threshold, the location sets overlap, and the departments don't conflict.
- *   Location is essential: Palantir lists "Deployment Strategist" in 11 cities, and those are 11 real openings.</li>
+ *   similarity is at least the threshold, the level words agree ("Senior" vs none, "II" vs "III"), both postings
+ *   have a location and the location sets overlap, and the departments don't conflict. Location is essential:
+ *   Palantir lists "Deployment Strategist" in 11 cities, and those are 11 real openings.</li>
  * </ol>
  *
  * <p>Clustering is leader-based rather than transitive: each posting is compared only to the canonical postings
@@ -110,6 +112,7 @@ public class Deduplicator {
 
     private boolean isMatch(DedupCandidate a, DedupCandidate b, double similarity) {
         return similarity >= threshold
+                && TitleNormalizer.levelTokens(a.title()).equals(TitleNormalizer.levelTokens(b.title()))
                 && LocationNormalizer.overlaps(a.locations(), b.locations())
                 && departmentsCompatible(a.department(), b.department());
     }

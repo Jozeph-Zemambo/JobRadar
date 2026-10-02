@@ -61,15 +61,13 @@ public final class LocationNormalizer {
     }
 
     /**
-     * True when two postings plausibly share a location. Two postings with no location data at all are treated
-     * as overlapping: there is nothing to tell them apart, so the title decides.
+     * True when two postings share a location. A posting with no location data overlaps nothing: on the live
+     * crawl, undescribed Workday postings ("2 Locations") otherwise all matched each other, and for dedup a false
+     * merge (hiding a real opening) is worse than a missed one.
      */
     public static boolean overlaps(Collection<String> a, Collection<String> b) {
         Set<String> keysA = keys(a);
         Set<String> keysB = keys(b);
-        if (keysA.isEmpty() && keysB.isEmpty()) {
-            return true;
-        }
         Set<String> intersection = new HashSet<>(keysA);
         intersection.retainAll(keysB);
         return !intersection.isEmpty();
