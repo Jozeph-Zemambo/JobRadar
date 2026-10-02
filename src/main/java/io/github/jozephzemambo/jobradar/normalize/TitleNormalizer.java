@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -37,6 +38,12 @@ public final class TitleNormalizer {
             "intern", "internship", "junior", "associate", "mid", "senior", "staff", "principal", "lead",
             "distinguished", "head", "director", "vp", "chief", "1", "2", "3", "4", "5");
 
+    /**
+     * Requisition ids that some boards put in titles ("(R4571)", "JR0286755"). They identify the req, not the role,
+     * so two reqs for the same role would otherwise look different. Years ("2027") have no letters and are kept.
+     */
+    private static final Pattern REQ_ID = Pattern.compile("[a-z]{1,3}\\d{4,}");
+
     private TitleNormalizer() {
     }
 
@@ -52,6 +59,7 @@ public final class TitleNormalizer {
             return "";
         }
         return Arrays.stream(cleaned.split(" "))
+                .filter(token -> !REQ_ID.matcher(token).matches())
                 .map(token -> ABBREVIATIONS.getOrDefault(token, token))
                 .collect(Collectors.joining(" "));
     }

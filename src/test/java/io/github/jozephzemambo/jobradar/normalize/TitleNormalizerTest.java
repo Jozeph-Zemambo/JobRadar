@@ -16,6 +16,8 @@ class TitleNormalizerTest {
             C++ / C# Developer                   | c++ c# developer
             Abuse   Investigator                 | abuse investigator
             Ingeniero de Datos Señor             | ingeniero de datos señor
+            Staff Engineer, Mechanical (R4571)   | staff engineer mechanical
+            Technician JR0286755 2027            | technician 2027
             """)
     void normalizes(String raw, String expected) {
         assertThat(TitleNormalizer.normalize(raw)).isEqualTo(expected);

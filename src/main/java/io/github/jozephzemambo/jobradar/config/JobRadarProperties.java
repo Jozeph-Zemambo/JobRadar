@@ -56,7 +56,11 @@ public record JobRadarProperties(
             @DefaultValue("16") int platformPoolSize) {
     }
 
-    /** Fuzzy-dedup threshold on title token similarity, in (0, 1]. See bench/dedup for how it was chosen. */
-    public record Dedup(@DefaultValue("0.8") double titleSimilarityThreshold) {
+    /**
+     * Fuzzy-dedup threshold on title token similarity, in (0, 1]. 0.85 rather than the initial 0.8: on 100
+     * labeled pairs, 7 of 9 predicted duplicates at exactly 0.8 were distinct roles (a five-word title plus one
+     * specialization word). See docs/BENCHMARKS.md.
+     */
+    public record Dedup(@DefaultValue("0.85") double titleSimilarityThreshold) {
     }
 }

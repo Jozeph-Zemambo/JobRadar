@@ -20,6 +20,13 @@ class LocationNormalizerTest {
             Chicago, IL                           | New York, NY               | false
             Remote (US)                           | Remote (Canada)            | true
             Dublin                                | US-Remote                  | false
+            Mountain View, California             | San Francisco, California  | false
+            Hybrid                                | Hybrid                     | false
+            Petaling Jaya, Selangor, Malaysia     | Petaling Jaya, Malaysia    | true
+            Shah Alam, Selangor, Malaysia         | Petaling Jaya, Selangor, Malaysia | false
+            US, Oregon, Hillsboro                 | Hillsboro, Oregon          | true
+            Shenzhen, Guangdong Province, China   | shenzhen, Guangdong Province, China | true
+            Toronto, ON, ca                       | Toronto                    | true
             """)
     void overlap(String a, String b, boolean expected) {
         assertThat(LocationNormalizer.overlaps(List.of(a), List.of(b))).isEqualTo(expected);
