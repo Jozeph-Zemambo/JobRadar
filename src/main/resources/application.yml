@@ -11,6 +11,9 @@ spring:
     url: jdbc:h2:file:./data/jobradar;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
     username: sa
     password: ""
+  flyway:
+    # Shared migrations plus per-database ones (e.g. Postgres partial indexes that H2 can't express).
+    locations: classpath:db/migration,classpath:db/vendor/{vendor}
   jpa:
     hibernate:
       ddl-auto: validate

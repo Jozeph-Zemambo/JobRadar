@@ -1,0 +1,6 @@
+# Postgres instead of the default H2 file database. Defaults match docker-compose.yml; override with env vars.
+spring:
+  datasource:
+    url: ${JOBRADAR_DB_URL:jdbc:postgresql://localhost:5432/jobradar}
+    username: ${JOBRADAR_DB_USER:jobradar}
+    password: ${JOBRADAR_DB_PASSWORD:jobradar}

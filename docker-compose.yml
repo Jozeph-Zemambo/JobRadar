@@ -1,0 +1,22 @@
+# Local Postgres for JobRadar. Start with `docker compose up -d`, then run the app with
+# `--spring.profiles.active=postgres`. Credentials are for this local container only.
+# If another Postgres already listens on 5432, pick a free host port:
+#   JOBRADAR_PG_PORT=5433 docker compose up -d
+#   JOBRADAR_DB_URL=jdbc:postgresql://localhost:5433/jobradar java -jar ... --spring.profiles.active=postgres
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: jobradar
+      POSTGRES_USER: jobradar
+      POSTGRES_PASSWORD: jobradar
+    ports:
+      - "${JOBRADAR_PG_PORT:-5432}:5432"
+    volumes:
+      - jobradar-pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobradar -d jobradar"]
+      interval: 5s
+      retries: 10
+volumes:
+  jobradar-pg:
