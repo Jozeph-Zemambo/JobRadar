@@ -6,4 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface IngestRunRepository extends JpaRepository<IngestRunEntity, Long> {
 
     Optional<IngestRunEntity> findFirstByOrderByStartedAtDesc();
+
+    Optional<IngestRunEntity> findFirstByOrderByStartedAtAsc();
 }

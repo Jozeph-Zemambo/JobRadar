@@ -99,6 +99,18 @@ public class IngestRunEntity {
         return postingsFetched;
     }
 
+    public int getCompaniesRequested() {
+        return companiesRequested;
+    }
+
+    public int getPostingsNew() {
+        return postingsNew;
+    }
+
+    public int getPostingsClosed() {
+        return postingsClosed;
+    }
+
     public long getWallTimeMs() {
         return wallTimeMs;
     }

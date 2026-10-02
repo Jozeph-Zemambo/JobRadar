@@ -2,7 +2,9 @@ package io.github.jozephzemambo.jobradar.persistence;
 
 import io.github.jozephzemambo.jobradar.dedup.DedupResult;
 import io.github.jozephzemambo.jobradar.domain.Ats;
+import java.time.Instant;
 import java.util.List;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -40,4 +42,36 @@ public interface PostingRepository extends JpaRepository<PostingEntity, Long>,
             select p.ats, p.boardToken, count(p), sum(case when p.closedAt is null then 1 else 0 end), max(p.lastSeenAt)
             from PostingEntity p group by p.ats, p.boardToken""")
     List<Object[]> boardSummaries();
+
+    long countByClosedAtIsNull();
+
+    long countByClosedAtIsNotNull();
+
+    long countByClosedAtIsNullAndDuplicateOfIdIsNotNull();
+
+    @Query("""
+            select p.ats, count(p) from PostingEntity p
+            where p.closedAt is null and p.duplicateOfId is null group by p.ats order by count(p) desc""")
+    List<Object[]> openCountsByAts();
+
+    @Query("""
+            select p.workplaceType, count(p) from PostingEntity p
+            where p.closedAt is null and p.duplicateOfId is null group by p.workplaceType order by count(p) desc""")
+    List<Object[]> openCountsByWorkplace();
+
+    @Query("""
+            select p.company, count(p) from PostingEntity p
+            where p.closedAt is null and p.duplicateOfId is null group by p.company order by count(p) desc, p.company""")
+    List<Object[]> openCountsByCompany(Pageable limit);
+
+    /** The detected-skills list of every open, non-duplicate posting (converted back to a List per row). */
+    @Query("select p.skills from PostingEntity p where p.closedAt is null and p.duplicateOfId is null")
+    List<Object> openSkillLists();
+
+    /** First-seen and closed times of postings whose opening JobRadar observed (first seen after the cutoff). */
+    @Query("select p.firstSeenAt, p.closedAt from PostingEntity p where p.closedAt is not null and p.firstSeenAt > :cutoff")
+    List<Object[]> closedLifetimesFirstSeenAfter(@Param("cutoff") Instant cutoff);
+
+    @Query("select count(p) from PostingEntity p where p.firstSeenAt > :since and p.firstSeenAt > :cutoff")
+    long countFirstSeenAfter(@Param("since") Instant since, @Param("cutoff") Instant cutoff);
 }
