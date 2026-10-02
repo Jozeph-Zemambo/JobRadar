@@ -11,7 +11,6 @@ import io.github.jozephzemambo.jobradar.persistence.IngestRunRepository;
 import io.github.jozephzemambo.jobradar.persistence.PostingStore;
 import io.github.jozephzemambo.jobradar.persistence.SyncCounts;
 import io.github.jozephzemambo.jobradar.scoring.Profile;
-import io.github.jozephzemambo.jobradar.scoring.ScoredPosting;
 import io.github.jozephzemambo.jobradar.scoring.Scorer;
 import io.github.jozephzemambo.jobradar.source.SourceRegistry;
 import java.time.Clock;
@@ -88,10 +87,8 @@ public class IngestService {
             switch (outcome) {
                 case FetchOutcome.Success success -> {
                     postings.addAll(success.postings());
-                    List<ScoredPosting> scored = success.postings().stream()
-                            .map(p -> new ScoredPosting(p, scorer.score(p, profile)))
-                            .toList();
-                    sync = sync.plus(store.syncBoard(success.company(), scored, startedAt));
+                    sync = sync.plus(store.syncBoard(success.company(), success.postings(), startedAt,
+                            posting -> scorer.score(posting, profile)));
                 }
                 case FetchOutcome.Failure failure -> failures.add(new IngestReport.CompanyFailure(
                         failure.company().name(), failure.company().boardToken(), failure.company().ats(),

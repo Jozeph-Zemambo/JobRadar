@@ -5,13 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
-import io.github.jozephzemambo.jobradar.scoring.ScoredPosting;
+import io.github.jozephzemambo.jobradar.scoring.ScoreBreakdown;
 import io.github.jozephzemambo.jobradar.persistence.PostingEntity;
 import io.github.jozephzemambo.jobradar.persistence.PostingRepository;
 import io.github.jozephzemambo.jobradar.persistence.PostingStore;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.List;
+import java.util.function.Function;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -27,6 +27,8 @@ import org.springframework.context.annotation.Import;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({PostingStore.class, DedupService.class, DedupServiceTest.Config.class})
 class DedupServiceTest {
+
+    private static final Function<Posting, ScoreBreakdown> UNSCORED = p -> null;
 
     private static final Instant NOW = Instant.parse("2026-10-02T06:00:00Z");
 
@@ -54,10 +56,10 @@ class DedupServiceTest {
 
     @Test
     void linksDuplicatesInTheDatabaseAndRecomputesOnEveryRun() {
-        store.syncBoard(stripe, scored(
+        store.syncBoard(stripe, List.of(
                 posting("1", "Abuse Investigator", "Dublin"),
                 posting("2", "Abuse Investigator", "Dublin"),
-                posting("3", "Abuse Investigator", "Seattle")), NOW);
+                posting("3", "Abuse Investigator", "Seattle")), NOW, UNSCORED);
         em.flush();
 
         DedupResult first = dedupService.refresh();
@@ -72,8 +74,8 @@ class DedupServiceTest {
         assertThat(byId.get("3").getDuplicateOfId()).isNull();
 
         // The canonical posting closes: the remaining one is no longer a duplicate of anything open.
-        store.syncBoard(stripe, scored(posting("2", "Abuse Investigator", "Dublin"),
-                posting("3", "Abuse Investigator", "Seattle")), NOW.plusSeconds(86_400));
+        store.syncBoard(stripe, List.of(posting("2", "Abuse Investigator", "Dublin"),
+                posting("3", "Abuse Investigator", "Seattle")), NOW.plusSeconds(86_400), UNSCORED);
         em.flush();
         DedupResult second = dedupService.refresh();
         em.clear();
@@ -84,7 +86,7 @@ class DedupServiceTest {
 
     @Test
     void loadsLocationsThroughTheConverterInAProjection() {
-        store.syncBoard(stripe, scored(posting("1", "Designer", "Dublin")), NOW);
+        store.syncBoard(stripe, List.of(posting("1", "Designer", "Dublin")), NOW, UNSCORED);
         em.flush();
 
         assertThat(dedupService.loadOpenCandidates()).singleElement().satisfies(c -> {
@@ -101,9 +103,5 @@ class DedupServiceTest {
     private static Posting posting(String id, String title, String location) {
         return new Posting(Ats.GREENHOUSE, id, "Stripe", title, List.of(location, "Remote (EU)"), null,
                 "8611 Security Analytics", "https://stripe.com/jobs/search?gh_jid=" + id, null, "", null, null);
-    }
-
-    private static List<ScoredPosting> scored(Posting... postings) {
-        return Arrays.stream(postings).map(p -> new ScoredPosting(p, null)).toList();
     }
 }

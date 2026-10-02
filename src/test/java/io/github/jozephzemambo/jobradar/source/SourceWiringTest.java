@@ -23,7 +23,7 @@ class SourceWiringTest {
         for (Ats ats : Ats.values()) {
             assertThat(registry.forAts(ats).ats()).isEqualTo(ats);
         }
-        assertThat(properties.companies()).hasSize(45)
+        assertThat(properties.companies()).hasSize(48)
                 .allSatisfy(c -> assertThat(registry.supports(c.ats())).isTrue());
         assertThat(properties.sources().leverBaseUrl()).isEqualTo("https://api.lever.co");
         assertThat(properties.http().maxAttempts()).isEqualTo(4);

@@ -7,5 +7,6 @@ package io.github.jozephzemambo.jobradar.domain;
 public enum Ats {
     GREENHOUSE,
     LEVER,
-    ASHBY
+    ASHBY,
+    WORKDAY
 }

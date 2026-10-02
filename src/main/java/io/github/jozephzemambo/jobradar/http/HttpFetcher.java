@@ -34,22 +34,33 @@ public class HttpFetcher {
     }
 
     public byte[] get(URI uri) {
-        return retryPolicy.execute(() -> attempt(uri));
+        return retryPolicy.execute(() -> attempt(uri, HttpRequest.BodyPublishers.noBody(), "GET"));
     }
 
-    private byte[] attempt(URI uri) {
+    /**
+     * POST a JSON body. Only used for read-only search endpoints that take their query as a body (Workday's
+     * job search), which is why retrying it is safe.
+     */
+    public byte[] postJson(URI uri, String json) {
+        return retryPolicy.execute(() -> attempt(uri, HttpRequest.BodyPublishers.ofString(json), "POST"));
+    }
+
+    private byte[] attempt(URI uri, HttpRequest.BodyPublisher body, String method) {
         try {
             rateLimiter.acquire(limiterKey(uri));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new UpstreamException(uri, e);
         }
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .GET()
+        HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
+                .method(method, body)
                 .timeout(requestTimeout)
                 .header("User-Agent", userAgent)
-                .header("Accept", "application/json")
-                .build();
+                .header("Accept", "application/json");
+        if (method.equals("POST")) {
+            builder.header("Content-Type", "application/json");
+        }
+        HttpRequest request = builder.build();
         HttpResponse<byte[]> response;
         try {
             response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());

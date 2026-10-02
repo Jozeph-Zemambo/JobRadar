@@ -27,11 +27,16 @@ public record JobRadarProperties(
         profile = profile == null ? new Profile(null, null, null, null) : profile;
     }
 
-    /** Base URLs per ATS. Overridden in tests and benchmarks to point at a local WireMock. */
+    /**
+     * Base URLs per ATS (overridden in tests and benchmarks to point at a local WireMock), and how many postings
+     * per paged board (Workday) get a detail request for their description.
+     */
     public record Sources(
             @DefaultValue("https://boards-api.greenhouse.io") String greenhouseBaseUrl,
             @DefaultValue("https://api.lever.co") String leverBaseUrl,
-            @DefaultValue("https://api.ashbyhq.com") String ashbyBaseUrl) {
+            @DefaultValue("https://api.ashbyhq.com") String ashbyBaseUrl,
+            @DefaultValue("https://{tenant}.{wd}.myworkdayjobs.com") String workdayBaseUrlTemplate,
+            @DefaultValue("50") int maxDetailsPerBoard) {
     }
 
     /**

@@ -2,7 +2,7 @@ package io.github.jozephzemambo.jobradar.persistence;
 
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
-import io.github.jozephzemambo.jobradar.scoring.ScoredPosting;
+import io.github.jozephzemambo.jobradar.scoring.ScoreBreakdown;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,9 +30,15 @@ public class PostingStore {
         this.repository = repository;
     }
 
-    /** One transaction per board: a database error on one board doesn't roll back the others. */
+    /**
+     * One transaction per board: a database error on one board doesn't roll back the others.
+     *
+     * @param scorer scores the <em>stored</em> state after merging (so a description kept from an earlier run
+     *               still counts); may return null to leave a posting unscored
+     */
     @Transactional
-    public SyncCounts syncBoard(Company company, List<ScoredPosting> current, Instant now) {
+    public SyncCounts syncBoard(Company company, List<Posting> current, Instant now,
+            Function<Posting, ScoreBreakdown> scorer) {
         Map<String, PostingEntity> existing = new HashMap<>();
         for (PostingEntity entity : repository.findByAtsAndBoardToken(company.ats(), company.boardToken())) {
             existing.put(entity.getExternalId(), entity);
@@ -42,8 +49,7 @@ public class PostingStore {
         int reopened = 0;
         Set<String> seen = new HashSet<>();
         List<PostingEntity> toSave = new ArrayList<>(current.size());
-        for (ScoredPosting scored : current) {
-            Posting posting = scored.posting();
+        for (Posting posting : current) {
             if (!seen.add(posting.externalId())) {
                 continue; // the same id twice in one response: keep the first
             }
@@ -56,7 +62,7 @@ public class PostingStore {
             } else {
                 updated++;
             }
-            entity.applyScore(scored.score());
+            entity.applyScore(scorer.apply(entity.toPosting()));
             toSave.add(entity);
         }
 

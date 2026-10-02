@@ -5,12 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.jozephzemambo.jobradar.domain.Ats;
 import io.github.jozephzemambo.jobradar.domain.Company;
 import io.github.jozephzemambo.jobradar.domain.Posting;
-import io.github.jozephzemambo.jobradar.scoring.ScoredPosting;
+import io.github.jozephzemambo.jobradar.scoring.ScoreBreakdown;
 import io.github.jozephzemambo.jobradar.domain.WorkplaceType;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.List;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -23,6 +23,8 @@ import org.springframework.context.annotation.Import;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(PostingStore.class)
 class PostingStoreTest {
+
+    private static final Function<Posting, ScoreBreakdown> UNSCORED = p -> null;
 
     private static final Instant DAY_1 = Instant.parse("2026-10-01T06:00:00Z");
     private static final Instant DAY_2 = DAY_1.plus(Duration.ofDays(1));
@@ -41,8 +43,8 @@ class PostingStoreTest {
 
     @Test
     void firstSyncCreatesEverything() {
-        SyncCounts counts = store.syncBoard(palantir, scored(posting("a", "Deployment Strategist"),
-                posting("b", "Forward Deployed Engineer")), DAY_1);
+        SyncCounts counts = store.syncBoard(palantir, List.of(posting("a", "Deployment Strategist"),
+                posting("b", "Forward Deployed Engineer")), DAY_1, UNSCORED);
 
         assertThat(counts).isEqualTo(new SyncCounts(2, 0, 0, 0));
         PostingEntity a = find("a");
@@ -56,10 +58,10 @@ class PostingStoreTest {
 
     @Test
     void resyncingTheSameListingIsIdempotent() {
-        store.syncBoard(palantir, scored(posting("a", "Strategist")), DAY_1);
+        store.syncBoard(palantir, List.of(posting("a", "Strategist")), DAY_1, UNSCORED);
         flushAndClear();
 
-        SyncCounts counts = store.syncBoard(palantir, scored(posting("a", "Strategist")), DAY_2);
+        SyncCounts counts = store.syncBoard(palantir, List.of(posting("a", "Strategist")), DAY_2, UNSCORED);
         flushAndClear();
 
         assertThat(counts).isEqualTo(new SyncCounts(0, 1, 0, 0));
@@ -71,15 +73,15 @@ class PostingStoreTest {
 
     @Test
     void postingMissingFromALaterListingIsClosedAndReopensIfItReturns() {
-        store.syncBoard(palantir, scored(posting("a", "A"), posting("b", "B")), DAY_1);
+        store.syncBoard(palantir, List.of(posting("a", "A"), posting("b", "B")), DAY_1, UNSCORED);
         flushAndClear();
 
-        SyncCounts day2 = store.syncBoard(palantir, scored(posting("a", "A")), DAY_2);
+        SyncCounts day2 = store.syncBoard(palantir, List.of(posting("a", "A")), DAY_2, UNSCORED);
         flushAndClear();
         assertThat(day2).isEqualTo(new SyncCounts(0, 1, 0, 1));
         assertThat(find("b").getClosedAt()).isEqualTo(DAY_2);
 
-        SyncCounts day3 = store.syncBoard(palantir, scored(posting("a", "A"), posting("b", "B")), DAY_3);
+        SyncCounts day3 = store.syncBoard(palantir, List.of(posting("a", "A"), posting("b", "B")), DAY_3, UNSCORED);
         flushAndClear();
         assertThat(day3).isEqualTo(new SyncCounts(0, 1, 1, 0));
         assertThat(find("b").isOpen()).isTrue();
@@ -88,11 +90,11 @@ class PostingStoreTest {
 
     @Test
     void alreadyClosedPostingIsNotClosedAgain() {
-        store.syncBoard(palantir, scored(posting("a", "A")), DAY_1);
-        store.syncBoard(palantir, scored(), DAY_2);
+        store.syncBoard(palantir, List.of(posting("a", "A")), DAY_1, UNSCORED);
+        store.syncBoard(palantir, List.of(), DAY_2, UNSCORED);
         flushAndClear();
 
-        SyncCounts counts = store.syncBoard(palantir, scored(), DAY_3);
+        SyncCounts counts = store.syncBoard(palantir, List.of(), DAY_3, UNSCORED);
 
         assertThat(counts.closed()).isZero();
         assertThat(find("a").getClosedAt()).isEqualTo(DAY_2);
@@ -101,11 +103,11 @@ class PostingStoreTest {
     @Test
     void otherBoardsAreUntouched() {
         Company spotify = new Company("Spotify", Ats.LEVER, "spotify");
-        store.syncBoard(palantir, scored(posting("a", "A")), DAY_1);
-        store.syncBoard(spotify, scored(posting("s", "S")), DAY_1);
+        store.syncBoard(palantir, List.of(posting("a", "A")), DAY_1, UNSCORED);
+        store.syncBoard(spotify, List.of(posting("s", "S")), DAY_1, UNSCORED);
         flushAndClear();
 
-        store.syncBoard(spotify, scored(), DAY_2);
+        store.syncBoard(spotify, List.of(), DAY_2, UNSCORED);
         flushAndClear();
 
         assertThat(find("a").isOpen()).isTrue();
@@ -114,15 +116,38 @@ class PostingStoreTest {
 
     @Test
     void duplicateIdsInOneResponseAreStoredOnce() {
-        SyncCounts counts = store.syncBoard(palantir, scored(posting("a", "A"), posting("a", "A again")), DAY_1);
+        SyncCounts counts = store.syncBoard(palantir, List.of(posting("a", "A"), posting("a", "A again")), DAY_1, UNSCORED);
 
         assertThat(counts.created()).isEqualTo(1);
         assertThat(find("a").getTitle()).isEqualTo("A");
     }
 
     @Test
+    void laterFetchWithoutDescriptionKeepsStoredOneAndScoresTheMergedPosting() {
+        // Paged sources only fetch details for the first N postings, so a posting can arrive undescribed.
+        store.syncBoard(palantir, List.of(posting("a", "A")), DAY_1, UNSCORED);
+        flushAndClear();
+        Posting undescribed = new Posting(Ats.LEVER, "a", "Palantir", "A", List.of(), null, null,
+                "https://jobs.lever.co/palantir/a", null, "", null, null);
+        List<String> scoredDescriptions = new java.util.ArrayList<>();
+
+        store.syncBoard(palantir, List.of(undescribed), DAY_2, p -> {
+            scoredDescriptions.add(p.descriptionText());
+            return new ScoreBreakdown(0.9, 0.9, true, false, List.of("Java"), List.of("Java"), List.of());
+        });
+        flushAndClear();
+
+        PostingEntity a = find("a");
+        assertThat(a.getDescription()).isEqualTo("Work with Java and SQL");
+        assertThat(scoredDescriptions).containsExactly("Work with Java and SQL");
+        assertThat(a.getScore()).isEqualTo(0.9);
+        assertThat(a.getSkills()).containsExactly("Java");
+        assertThat(a.getMatchedSkills()).containsExactly("Java");
+    }
+
+    @Test
     void entityEqualityIsById() {
-        store.syncBoard(palantir, scored(posting("a", "A"), posting("b", "B")), DAY_1);
+        store.syncBoard(palantir, List.of(posting("a", "A"), posting("b", "B")), DAY_1, UNSCORED);
         flushAndClear();
         PostingEntity a1 = find("a");
         flushAndClear();
@@ -152,9 +177,5 @@ class PostingStoreTest {
                 WorkplaceType.HYBRID, "Business", "https://jobs.lever.co/palantir/" + id,
                 "https://jobs.lever.co/palantir/" + id, "Work with Java and SQL", DAY_1.minus(Duration.ofDays(400)),
                 null);
-    }
-
-    private static List<ScoredPosting> scored(Posting... postings) {
-        return Arrays.stream(postings).map(p -> new ScoredPosting(p, null)).toList();
     }
 }

@@ -1,0 +1,37 @@
+{
+  "total": 3,
+  "jobPostings": [
+    {
+      "title": "Director, Software Development Engineering - PE Platforms",
+      "externalPath": "/job/USA-CA-Pleasanton/Director--Software-Development-Engineering---PE-Platforms_JR-0109619",
+      "locationsText": "USA, CA, Pleasanton",
+      "postedOn": "Posted Yesterday",
+      "remoteType": "Flex",
+      "bulletFields": [
+        "JR-0109619"
+      ]
+    },
+    {
+      "title": "Software Engineer - DevOps (US Federal)",
+      "externalPath": "/job/USAVAReston/Software-Engineer---DevOps--US-Federal-_JR-0110541-1",
+      "locationsText": "USA.VA.Reston",
+      "postedOn": "Posted Yesterday",
+      "remoteType": "Flex",
+      "bulletFields": [
+        "JR-0110541"
+      ]
+    },
+    {
+      "title": "Principal, Product Manager - Financial Reporting & Analytics",
+      "externalPath": "/job/USA-CA-Pleasanton/Principal--Product-Manager_JR-0110096",
+      "locationsText": "USA, CA, Pleasanton",
+      "postedOn": "Posted Yesterday",
+      "remoteType": "Flex",
+      "bulletFields": [
+        "JR-0110096"
+      ]
+    }
+  ],
+  "facets": [],
+  "userAuthenticated": false
+}

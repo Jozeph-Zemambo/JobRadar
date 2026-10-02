@@ -21,7 +21,6 @@ import io.github.jozephzemambo.jobradar.persistence.PostingStore;
 import io.github.jozephzemambo.jobradar.persistence.SyncCounts;
 import io.github.jozephzemambo.jobradar.scoring.Profile;
 import io.github.jozephzemambo.jobradar.scoring.ScoreBreakdown;
-import io.github.jozephzemambo.jobradar.scoring.ScoredPosting;
 import io.github.jozephzemambo.jobradar.scoring.Scorer;
 import io.github.jozephzemambo.jobradar.source.BoardNotFoundException;
 import io.github.jozephzemambo.jobradar.source.JobSource;
@@ -31,7 +30,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -60,7 +61,7 @@ class IngestServiceTest {
         when(greenhouse.ats()).thenReturn(Ats.GREENHOUSE);
         when(lever.ats()).thenReturn(Ats.LEVER);
         when(ashby.ats()).thenReturn(Ats.ASHBY);
-        when(store.syncBoard(any(), any(), any()))
+        when(store.syncBoard(any(), any(), any(), any()))
                 .thenAnswer(inv -> new SyncCounts(inv.<List<?>>getArgument(1).size(), 0, 0, 0));
         when(runs.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(dedupService.refresh()).thenReturn(new DedupResult(3, List.of(), 0));
@@ -94,10 +95,11 @@ class IngestServiceTest {
         assertThat(report.wallTime()).isGreaterThanOrEqualTo(report.fetchTime());
         assertThat(report.sync().created()).isEqualTo(3);
         // The failed board must not be synced: an empty list would wrongly close all its postings.
-        verify(store, never()).syncBoard(eq(plaid), any(), any());
-        ScoreBreakdown half = scorer.score(null, profile);
-        verify(store).syncBoard(stripe, List.of(new ScoredPosting(posting(Ats.GREENHOUSE, "1"), half),
-                new ScoredPosting(posting(Ats.GREENHOUSE, "2"), half)), NOW);
+        verify(store, never()).syncBoard(eq(plaid), any(), any(), any());
+        ArgumentCaptor<Function<Posting, ScoreBreakdown>> scoring = ArgumentCaptor.captor();
+        verify(store).syncBoard(eq(stripe), eq(List.of(posting(Ats.GREENHOUSE, "1"), posting(Ats.GREENHOUSE, "2"))),
+                eq(NOW), scoring.capture());
+        assertThat(scoring.getValue().apply(posting(Ats.GREENHOUSE, "1")).score()).isEqualTo(0.5);
         verify(runs).save(any(IngestRunEntity.class));
         assertThat(report.dedup()).isEqualTo(new IngestReport.DedupCounts(3, 0, 0));
     }

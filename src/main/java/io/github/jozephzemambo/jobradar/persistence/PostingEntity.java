@@ -139,7 +139,10 @@ public class PostingEntity {
         department = truncate(posting.department(), 500);
         url = truncate(posting.url(), 2000);
         canonicalUrl = truncate(posting.canonicalUrl(), 2000);
-        description = truncate(posting.descriptionText(), 200000);
+        // Paged sources only describe their first N postings per run; keep what an earlier run learned.
+        if (!posting.descriptionText().isBlank() || description == null) {
+            description = truncate(posting.descriptionText(), 200000);
+        }
         compensation = truncate(posting.compensationSummary(), 500);
         sourcePublishedAt = posting.sourcePublishedAt();
         lastSeenAt = now;

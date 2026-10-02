@@ -1,5 +1,6 @@
 # Public job boards JobRadar reads. Every board here returned a non-empty listing on 2026-10-02.
 # Boards move between ATSes (Plaid and Netflix left Lever), so re-check with bench/verify-companies.sh.
+# Workday board tokens are tenant/wdN/site (from the career site URL https://tenant.wdN.myworkdayjobs.com/site).
 jobradar:
   companies:
     # Greenhouse
@@ -50,3 +51,7 @@ jobradar:
     - { name: Harvey,      ats: ASHBY, board-token: harvey }
     - { name: Modal,       ats: ASHBY, board-token: modal }
     - { name: Sierra,      ats: ASHBY, board-token: sierra }
+    # Workday (paged; descriptions via one detail call per posting, capped per board)
+    - { name: Workday,     ats: WORKDAY, board-token: workday/wd5/Workday }
+    - { name: Adobe,       ats: WORKDAY, board-token: adobe/wd5/external_experienced }
+    - { name: Intel,       ats: WORKDAY, board-token: intel/wd1/External }
