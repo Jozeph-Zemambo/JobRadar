@@ -1,0 +1,119 @@
+package io.github.jozephzemambo.jobradar.ingest;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import io.github.jozephzemambo.jobradar.config.JobRadarProperties;
+import io.github.jozephzemambo.jobradar.domain.Ats;
+import io.github.jozephzemambo.jobradar.domain.Company;
+import io.github.jozephzemambo.jobradar.domain.Posting;
+import io.github.jozephzemambo.jobradar.source.BoardNotFoundException;
+import io.github.jozephzemambo.jobradar.source.JobSource;
+import io.github.jozephzemambo.jobradar.source.SourceRegistry;
+import java.net.URI;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+
+class IngestServiceTest {
+
+    private static final Instant NOW = Instant.parse("2026-10-02T12:00:00Z");
+
+    private final Company stripe = new Company("Stripe", Ats.GREENHOUSE, "stripe");
+    private final Company plaid = new Company("Plaid", Ats.LEVER, "plaid");
+    private final Company ramp = new Company("Ramp", Ats.ASHBY, "ramp");
+
+    private final JobSource greenhouse = mock(JobSource.class);
+    private final JobSource lever = mock(JobSource.class);
+    private final JobSource ashby = mock(JobSource.class);
+    private IngestService service;
+
+    @BeforeEach
+    void setUp() {
+        when(greenhouse.ats()).thenReturn(Ats.GREENHOUSE);
+        when(lever.ats()).thenReturn(Ats.LEVER);
+        when(ashby.ats()).thenReturn(Ats.ASHBY);
+        JobRadarProperties props = new JobRadarProperties(null, null, List.of(stripe, plaid, ramp));
+        service = new IngestService(new SourceRegistry(List.of(greenhouse, lever, ashby)),
+                List.of(new SequentialFetchStrategy(), new PlatformPoolFetchStrategy(2),
+                        new VirtualThreadFetchStrategy()),
+                props, Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    @ParameterizedTest
+    @EnumSource(FetchMode.class)
+    void oneFailingBoardDoesNotAffectTheOthers(FetchMode mode) {
+        when(greenhouse.fetch(stripe)).thenReturn(List.of(posting(Ats.GREENHOUSE, "1"), posting(Ats.GREENHOUSE, "2")));
+        when(lever.fetch(plaid)).thenThrow(new BoardNotFoundException(URI.create("https://api.lever.co/v0/postings/plaid")));
+        when(ashby.fetch(ramp)).thenReturn(List.of(posting(Ats.ASHBY, "a")));
+
+        IngestReport report = service.ingest(new IngestRequest(null, mode));
+
+        assertThat(report.mode()).isEqualTo(mode);
+        assertThat(report.startedAt()).isEqualTo(NOW);
+        assertThat(report.companiesRequested()).isEqualTo(3);
+        assertThat(report.companiesSucceeded()).isEqualTo(2);
+        assertThat(report.postingsFetched()).isEqualTo(3);
+        assertThat(report.postingsByAts()).containsEntry(Ats.GREENHOUSE, 2).containsEntry(Ats.ASHBY, 1)
+                .doesNotContainKey(Ats.LEVER);
+        assertThat(report.failures()).singleElement().satisfies(f -> {
+            assertThat(f.boardToken()).isEqualTo("plaid");
+            assertThat(f.errorType()).isEqualTo("BoardNotFoundException");
+        });
+        assertThat(report.wallTime()).isGreaterThanOrEqualTo(report.fetchTime());
+    }
+
+    @Test
+    void unexpectedBugInOneSourceIsAlsoIsolated() {
+        when(greenhouse.fetch(any())).thenThrow(new IllegalStateException("boom"));
+        when(lever.fetch(any())).thenReturn(List.of());
+        when(ashby.fetch(any())).thenReturn(List.of());
+
+        IngestReport report = service.ingest(IngestRequest.all());
+
+        assertThat(report.companiesSucceeded()).isEqualTo(2);
+        assertThat(report.failures()).extracting(IngestReport.CompanyFailure::message).containsExactly("boom");
+    }
+
+    @Test
+    void subsetOfCompaniesOnlyFetchesThose() {
+        when(ashby.fetch(ramp)).thenReturn(List.of());
+
+        IngestReport report = service.ingest(new IngestRequest(List.of("ramp", "ramp"), FetchMode.SEQUENTIAL));
+
+        assertThat(report.companiesRequested()).isEqualTo(1);
+        verify(greenhouse, never()).fetch(any());
+        verify(lever, never()).fetch(any());
+    }
+
+    @Test
+    void unknownCompanyIsRejectedBeforeAnyFetch() {
+        assertThatThrownBy(() -> service.ingest(new IngestRequest(List.of("ramp", "nope"), null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("nope");
+        verify(ashby, never()).fetch(any());
+    }
+
+    @Test
+    void defaultsToVirtualThreadsAndAllCompanies() {
+        IngestRequest request = IngestRequest.all();
+        assertThat(request.mode()).isEqualTo(FetchMode.VIRTUAL);
+        assertThat(request.companies()).isEmpty();
+        assertThat(service.configuredCompanies()).containsExactly(stripe, plaid, ramp);
+    }
+
+    static Posting posting(Ats ats, String id) {
+        return new Posting(ats, id, "Co", "Engineer", List.of(), null, null, "https://x.io/" + id, null, null,
+                null, null);
+    }
+}
