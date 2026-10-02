@@ -10,23 +10,40 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 
 /**
- * Blocking GET that turns HTTP outcomes into typed exceptions. Blocking is deliberate: callers run on virtual
- * threads, where a blocked {@code send} parks the virtual thread and frees the carrier, so plain sequential code
- * scales without callbacks.
+ * Rate-limited, retried, blocking GET that turns HTTP outcomes into typed exceptions.
+ *
+ * <p>Blocking is deliberate: callers run on virtual threads, where a blocked {@code send} parks the virtual thread
+ * and frees the carrier, so plain sequential code scales without callbacks. Every attempt, including retries,
+ * goes through the rate limiter, so retries can't exceed the per-host budget.
  */
 public class HttpFetcher {
 
     private final HttpClient client;
     private final String userAgent;
     private final Duration requestTimeout;
+    private final RateLimiter rateLimiter;
+    private final RetryPolicy retryPolicy;
 
-    public HttpFetcher(HttpClient client, String userAgent, Duration requestTimeout) {
+    public HttpFetcher(HttpClient client, String userAgent, Duration requestTimeout, RateLimiter rateLimiter,
+            RetryPolicy retryPolicy) {
         this.client = client;
         this.userAgent = userAgent;
         this.requestTimeout = requestTimeout;
+        this.rateLimiter = rateLimiter;
+        this.retryPolicy = retryPolicy;
     }
 
     public byte[] get(URI uri) {
+        return retryPolicy.execute(() -> attempt(uri));
+    }
+
+    private byte[] attempt(URI uri) {
+        try {
+            rateLimiter.acquire(limiterKey(uri));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new UpstreamException(uri, e);
+        }
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .GET()
                 .timeout(requestTimeout)
@@ -55,6 +72,11 @@ public class HttpFetcher {
                 .map(HttpFetcher::parseRetryAfter)
                 .orElse(null);
         throw new UpstreamException(uri, status, retryAfter);
+    }
+
+    /** Host plus port: three WireMock servers on localhost must count as three hosts, like the real ATSes. */
+    static String limiterKey(URI uri) {
+        return uri.getHost() + ":" + uri.getPort();
     }
 
     /** Retry-After in delta-seconds form. The HTTP-date form is rare on APIs and is ignored. */

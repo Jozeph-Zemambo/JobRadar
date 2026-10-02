@@ -1,6 +1,9 @@
 package io.github.jozephzemambo.jobradar.config;
 
 import io.github.jozephzemambo.jobradar.http.HttpFetcher;
+import io.github.jozephzemambo.jobradar.http.RateLimiter;
+import io.github.jozephzemambo.jobradar.http.RetryPolicy;
+import io.github.jozephzemambo.jobradar.http.TokenBucketRateLimiter;
 import io.github.jozephzemambo.jobradar.source.ashby.AshbySource;
 import io.github.jozephzemambo.jobradar.source.greenhouse.GreenhouseSource;
 import io.github.jozephzemambo.jobradar.source.lever.LeverSource;
@@ -27,8 +30,21 @@ public class SourceConfig {
     }
 
     @Bean
-    HttpFetcher httpFetcher(HttpClient httpClient, JobRadarProperties props) {
-        return new HttpFetcher(httpClient, props.http().userAgent(), props.http().requestTimeout());
+    RateLimiter rateLimiter(JobRadarProperties props) {
+        return new TokenBucketRateLimiter(props.http().requestsPerSecondPerHost(), props.http().burstPerHost());
+    }
+
+    @Bean
+    RetryPolicy retryPolicy(JobRadarProperties props) {
+        JobRadarProperties.Http http = props.http();
+        return new RetryPolicy(http.maxAttempts(), http.initialBackoff(), http.maxBackoff());
+    }
+
+    @Bean
+    HttpFetcher httpFetcher(HttpClient httpClient, RateLimiter rateLimiter, RetryPolicy retryPolicy,
+            JobRadarProperties props) {
+        return new HttpFetcher(httpClient, props.http().userAgent(), props.http().requestTimeout(), rateLimiter,
+                retryPolicy);
     }
 
     @Bean

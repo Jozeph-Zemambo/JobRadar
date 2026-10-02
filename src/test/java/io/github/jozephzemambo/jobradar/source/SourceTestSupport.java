@@ -1,6 +1,8 @@
 package io.github.jozephzemambo.jobradar.source;
 
 import io.github.jozephzemambo.jobradar.http.HttpFetcher;
+import io.github.jozephzemambo.jobradar.http.RateLimiter;
+import io.github.jozephzemambo.jobradar.http.RetryPolicy;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -21,7 +23,8 @@ public final class SourceTestSupport {
     }
 
     public static HttpFetcher plainFetcher() {
-        return new HttpFetcher(HttpClient.newHttpClient(), "JobRadar-test", Duration.ofSeconds(5));
+        return new HttpFetcher(HttpClient.newHttpClient(), "JobRadar-test", Duration.ofSeconds(5),
+                RateLimiter.UNLIMITED, RetryPolicy.noRetry());
     }
 
     public static String fixture(String name) {
