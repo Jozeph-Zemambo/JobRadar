@@ -1,6 +1,8 @@
 spring:
   application:
     name: jobradar
+  config:
+    import: classpath:companies.yml
   threads:
     virtual:
       enabled: true

@@ -1,0 +1,52 @@
+# Public job boards JobRadar reads. Every board here returned a non-empty listing on 2026-10-02.
+# Boards move between ATSes (Plaid and Netflix left Lever), so re-check with bench/verify-companies.sh.
+jobradar:
+  companies:
+    # Greenhouse
+    - { name: Stripe,      ats: GREENHOUSE, board-token: stripe }
+    - { name: Airbnb,      ats: GREENHOUSE, board-token: airbnb }
+    - { name: Discord,     ats: GREENHOUSE, board-token: discord }
+    - { name: Figma,       ats: GREENHOUSE, board-token: figma }
+    - { name: Databricks,  ats: GREENHOUSE, board-token: databricks }
+    - { name: Robinhood,   ats: GREENHOUSE, board-token: robinhood }
+    - { name: Coinbase,    ats: GREENHOUSE, board-token: coinbase }
+    - { name: Cloudflare,  ats: GREENHOUSE, board-token: cloudflare }
+    - { name: Dropbox,     ats: GREENHOUSE, board-token: dropbox }
+    - { name: Instacart,   ats: GREENHOUSE, board-token: instacart }
+    - { name: Lyft,        ats: GREENHOUSE, board-token: lyft }
+    - { name: Pinterest,   ats: GREENHOUSE, board-token: pinterest }
+    - { name: Reddit,      ats: GREENHOUSE, board-token: reddit }
+    - { name: GitLab,      ats: GREENHOUSE, board-token: gitlab }
+    - { name: Datadog,     ats: GREENHOUSE, board-token: datadog }
+    # Lever
+    - { name: Spotify,     ats: LEVER, board-token: spotify }
+    - { name: Palantir,    ats: LEVER, board-token: palantir }
+    - { name: Zoox,        ats: LEVER, board-token: zoox }
+    - { name: Binance,     ats: LEVER, board-token: binance }
+    - { name: Outreach,    ats: LEVER, board-token: outreach }
+    - { name: JumpCloud,   ats: LEVER, board-token: jumpcloud }
+    - { name: Veeva,       ats: LEVER, board-token: veeva }
+    - { name: Nium,        ats: LEVER, board-token: nium }
+    - { name: Sonar,       ats: LEVER, board-token: sonarsource }
+    - { name: Aircall,     ats: LEVER, board-token: aircall }
+    - { name: Match Group, ats: LEVER, board-token: matchgroup }
+    - { name: Ro,          ats: LEVER, board-token: ro }
+    - { name: Shield AI,   ats: LEVER, board-token: shieldai }
+    - { name: Hive,        ats: LEVER, board-token: hive }
+    - { name: Pigment,     ats: LEVER, board-token: pigment }
+    # Ashby
+    - { name: Ramp,        ats: ASHBY, board-token: ramp }
+    - { name: Notion,      ats: ASHBY, board-token: notion }
+    - { name: OpenAI,      ats: ASHBY, board-token: openai }
+    - { name: Linear,      ats: ASHBY, board-token: linear }
+    - { name: Cohere,      ats: ASHBY, board-token: cohere }
+    - { name: Perplexity,  ats: ASHBY, board-token: perplexity }
+    - { name: Replit,      ats: ASHBY, board-token: replit }
+    - { name: PostHog,     ats: ASHBY, board-token: posthog }
+    - { name: Supabase,    ats: ASHBY, board-token: supabase }
+    - { name: Vanta,       ats: ASHBY, board-token: vanta }
+    - { name: Zapier,      ats: ASHBY, board-token: zapier }
+    - { name: ElevenLabs,  ats: ASHBY, board-token: elevenlabs }
+    - { name: Harvey,      ats: ASHBY, board-token: harvey }
+    - { name: Modal,       ats: ASHBY, board-token: modal }
+    - { name: Sierra,      ats: ASHBY, board-token: sierra }

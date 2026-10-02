@@ -1,0 +1,45 @@
+package io.github.jozephzemambo.jobradar.config;
+
+import io.github.jozephzemambo.jobradar.domain.Company;
+import java.time.Duration;
+import java.util.List;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
+
+/**
+ * Everything configurable under {@code jobradar.*}, bound once at startup into immutable records.
+ * Constructor binding means a missing or mistyped value fails fast at boot instead of at first use.
+ */
+@ConfigurationProperties("jobradar")
+public record JobRadarProperties(
+        @DefaultValue Sources sources,
+        @DefaultValue Http http,
+        List<Company> companies) {
+
+    public JobRadarProperties {
+        companies = companies == null ? List.of() : List.copyOf(companies);
+    }
+
+    /** Base URLs per ATS. Overridden in tests and benchmarks to point at a local WireMock. */
+    public record Sources(
+            @DefaultValue("https://boards-api.greenhouse.io") String greenhouseBaseUrl,
+            @DefaultValue("https://api.lever.co") String leverBaseUrl,
+            @DefaultValue("https://api.ashbyhq.com") String ashbyBaseUrl) {
+    }
+
+    /**
+     * Outbound HTTP politeness and resilience. None of the three APIs documents a rate limit, so the default is
+     * deliberately conservative.
+     */
+    public record Http(
+            @DefaultValue("JobRadar/0.1 (job-market analytics; +https://github.com/Jozeph-Zemambo/jobradar)") String userAgent,
+            @DefaultValue("5s") Duration connectTimeout,
+            @DefaultValue("30s") Duration requestTimeout,
+            @DefaultValue("2.0") double requestsPerSecondPerHost,
+            @DefaultValue("2") int burstPerHost,
+            @DefaultValue("4") int maxAttempts,
+            @DefaultValue("500ms") Duration initialBackoff,
+            @DefaultValue("8s") Duration maxBackoff,
+            @DefaultValue("16") int platformPoolSize) {
+    }
+}
