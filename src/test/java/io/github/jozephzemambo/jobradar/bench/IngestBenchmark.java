@@ -72,8 +72,10 @@ class IngestBenchmark {
 
     static {
         for (Ats ats : SIMPLE_ATS) {
+            // The request journal keeps every served response, bodies included; with payloads up to 15 MB it
+            // exhausted memory partway through the first full run and WireMock started answering 500.
             WireMockServer server = new WireMockServer(wireMockConfig().dynamicPort().containerThreads(80)
-                    .asynchronousResponseEnabled(true).asynchronousResponseThreads(80));
+                    .asynchronousResponseEnabled(true).asynchronousResponseThreads(80).disableRequestJournal());
             server.start();
             SERVERS.put(ats, server);
         }
@@ -158,6 +160,10 @@ class IngestBenchmark {
                         jdbc.update("update posting set duplicate_of_id = null");
                         jdbc.update("delete from posting");
                         IngestReport report = ingest.ingest(new IngestRequest(tokens, mode));
+                        if (!report.failures().isEmpty()) {
+                            throw new IllegalStateException("Benchmark run had failures, results would be skewed: "
+                                    + report.failures());
+                        }
                         if (run > 0) { // run 0 is the warm-up
                             rows.add(new Row(limiterName, tokens.size(), mode, run, report.wallMillis(),
                                     report.fetchMillis(), report.persistMillis(), report.postingsFetched(),
