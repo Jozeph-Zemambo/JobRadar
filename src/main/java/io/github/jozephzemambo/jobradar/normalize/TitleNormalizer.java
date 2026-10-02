@@ -1,0 +1,59 @@
+package io.github.jozephzemambo.jobradar.normalize;
+
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+/**
+ * Normalizes job titles for fuzzy comparison: case, punctuation, whitespace and common abbreviations.
+ * "Sr. Software Eng (Backend)" and "senior software engineer, backend" normalize to the same string.
+ */
+public final class TitleNormalizer {
+
+    private static final Map<String, String> ABBREVIATIONS = Map.ofEntries(
+            Map.entry("sr", "senior"),
+            Map.entry("snr", "senior"),
+            Map.entry("jr", "junior"),
+            Map.entry("eng", "engineer"),
+            Map.entry("engr", "engineer"),
+            Map.entry("swe", "software engineer"),
+            Map.entry("sde", "software engineer"),
+            Map.entry("mgr", "manager"),
+            Map.entry("mgmt", "management"),
+            Map.entry("dev", "developer"),
+            Map.entry("ops", "operations"),
+            Map.entry("ii", "2"),
+            Map.entry("iii", "3"),
+            Map.entry("iv", "4"));
+
+    private TitleNormalizer() {
+    }
+
+    /** Lowercase, punctuation to spaces (keeping {@code + #} for C++ / C#), abbreviations expanded. */
+    public static String normalize(String title) {
+        if (title == null) {
+            return "";
+        }
+        String cleaned = title.toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{L}\\p{N}+#]+", " ")
+                .strip();
+        if (cleaned.isEmpty()) {
+            return "";
+        }
+        return Arrays.stream(cleaned.split(" "))
+                .map(token -> ABBREVIATIONS.getOrDefault(token, token))
+                .collect(Collectors.joining(" "));
+    }
+
+    /** Distinct tokens of the normalized title, in first-seen order. */
+    public static Set<String> tokens(String title) {
+        String normalized = normalize(title);
+        if (normalized.isEmpty()) {
+            return Set.of();
+        }
+        return new LinkedHashSet<>(Arrays.asList(normalized.split(" ")));
+    }
+}
