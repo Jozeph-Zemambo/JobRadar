@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
  */
 class DedupRegressionTest {
 
-    private static final double PRODUCTION_THRESHOLD = 0.85;
+    private static final double PRODUCTION_THRESHOLD = 1.0;
 
     @Test
     void ruleIsNoWorseOnTheValidationLabels() throws Exception {

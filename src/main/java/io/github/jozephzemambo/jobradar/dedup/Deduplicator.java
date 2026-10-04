@@ -22,8 +22,9 @@ import org.springframework.stereotype.Component;
  *
  * <ol>
  *   <li><b>Exact:</b> identical canonical URL.</li>
- *   <li><b>Fuzzy:</b> within one company (blocking keeps this from being all-pairs over every posting), the title
- *   token similarity is at least the threshold, the level words agree ("Senior" vs none, "II" vs "III"), both
+ *   <li><b>Fuzzy:</b> within one company (blocking keeps this from being all-pairs over every posting), the
+ *   Jaccard similarity of the titles' {@linkplain TitleNormalizer#signatureTokens signature tokens} is at least
+ *   the threshold (default 1.0: same signature), the level words agree ("Senior" vs none, "II" vs "III"), both
  *   postings have a location and the location sets overlap, and the departments don't conflict. Location is
  *   essential: Palantir lists "Deployment Strategist" in 11 cities, and those are 11 real openings.</li>
  * </ol>
@@ -66,7 +67,7 @@ public class Deduplicator {
             String department = c.department() == null || c.department().isBlank()
                     ? null
                     : c.department().strip().toLowerCase(Locale.ROOT);
-            return new Prepared(c, c.company().strip().toLowerCase(Locale.ROOT), TitleNormalizer.tokens(c.title()),
+            return new Prepared(c, c.company().strip().toLowerCase(Locale.ROOT), TitleNormalizer.signatureTokens(c.title()),
                     TitleNormalizer.levelTokens(c.title()), LocationNormalizer.keys(c.locations()), department);
         }
     }

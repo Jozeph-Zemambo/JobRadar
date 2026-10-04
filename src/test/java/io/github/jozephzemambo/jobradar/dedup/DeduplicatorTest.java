@@ -75,6 +75,21 @@ class DeduplicatorTest {
     }
 
     @Test
+    void oneExtraSpecializationWordMeansADifferentOpeningAtTheDefaultThreshold() {
+        // Real held-out false positives under the 0.85 rule (Shield AI, Ubisoft).
+        Deduplicator strict = new Deduplicator(1.0);
+        DedupCandidate weapons = c("Shield AI", "Senior Software Engineer, Autonomous Pilot Integration - Weapons (R5427)",
+                "Washington, D.C.", "Hivemind");
+        DedupCandidate general = c("Shield AI", "Senior Software Engineer, Autonomous Pilot Integration (R5200)",
+                "Washington, D.C.", "Hivemind");
+        DedupCandidate reqA = c("Shield AI", "Staff Engineer, Mechanical Design (R4571)", "Seattle", "Hivemind");
+        DedupCandidate reqB = c("Shield AI", "Staff Engineer, Mechanical Design (R4572)", "Seattle", "Hivemind");
+
+        assertThat(strict.isFuzzyMatch(weapons, general)).isFalse();
+        assertThat(strict.isFuzzyMatch(reqA, reqB)).as("only the requisition id differs").isTrue();
+    }
+
+    @Test
     void differentCompaniesAreNeverFuzzyMatched() {
         DedupCandidate a = c("Ramp", "Software Engineer, Frontend", "New York", "Engineering");
         DedupCandidate b = c("Notion", "Software Engineer, Frontend", "New York", "Engineering");

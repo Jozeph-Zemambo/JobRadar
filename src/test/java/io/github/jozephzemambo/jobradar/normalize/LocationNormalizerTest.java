@@ -18,7 +18,13 @@ class LocationNormalizerTest {
             US-Remote                             | Remote (US)                | true
             Seoul, South Korea                    | Copenhagen, Denmark        | false
             Chicago, IL                           | New York, NY               | false
-            Remote (US)                           | Remote (Canada)            | true
+            Remote (US)                           | Remote (Canada)            | false
+            Florida, USA, Remote                  | Texas, USA, Remote         | false
+            Florida, USA, Remote                  | 'North Carolina, USA, Remote; South Carolina, USA, Remote' | false
+            Remote - British Columbia, Canada     | Remote - United States     | false
+            Remote - India                        | India                      | false
+            Remote - India                        | India (Remote)             | true
+            Remote                                | Remote                     | true
             Dublin                                | US-Remote                  | false
             Mountain View, California             | San Francisco, California  | false
             Hybrid                                | Hybrid                     | false
@@ -49,7 +55,10 @@ class LocationNormalizerTest {
 
     @Test
     void genericKeysUsedWhenNoCity() {
-        assertThat(LocationNormalizer.keys(List.of("US-Remote"))).containsExactlyInAnyOrder("us", "remote");
+        assertThat(LocationNormalizer.keys(List.of("US-Remote"))).containsExactly("remote us");
+        assertThat(LocationNormalizer.keys(List.of("Florida, USA, Remote"))).as("most specific region wins")
+                .containsExactly("remote florida");
+        assertThat(LocationNormalizer.keys(List.of("Germany"))).containsExactly("germany");
     }
 
     @Test

@@ -22,8 +22,10 @@ import java.util.Set;
  *   <li>otherwise the string is a list of cities (Greenhouse writes "Seattle, San Francisco, New York City") and
  *   every specific segment is a key.</li>
  * </ul>
- * Region-level segments become keys only when a posting names no specific place at all, so "US-Remote" still
- * matches "Remote (US)". Workplace words ("Hybrid", "On-site") are dropped entirely because they aren't places.
+ * Region-level segments become keys only when a location names no specific place, and then only its most
+ * specific region (state over country over "remote"/"EMEA"), so "US-Remote" still matches "Remote (US)" but
+ * "Florida, USA, Remote" doesn't match "Texas, USA, Remote". Workplace words ("Hybrid", "On-site") are dropped
+ * entirely because they aren't places.
  *
  * <p>Both rules came from a labeled evaluation: "Mountain View, California" and "San Francisco, California" used
  * to overlap on "california", and two postings located only at "Hybrid" used to match.
@@ -49,14 +51,25 @@ public final class LocationNormalizer {
             "hybrid", "onsite", "inoffice", "office", "hq", "headquarters", "flexible", "n a", "na",
             "tbd", "multiple locations", "various");
 
-    /** Places, but too coarse to say two postings are in the same location (unless nothing finer is given). */
-    private static final Set<String> REGIONS = Set.of(
-            "remote", "anywhere", "global", "worldwide", "us", "uk", "canada", "eu", "europe", "emea", "apac",
-            "latam", "americas", "north america", "asia", "germany", "france", "india", "ireland", "japan",
-            "australia", "singapore", "netherlands", "spain", "italy", "brazil", "mexico", "china", "malaysia",
-            "israel", "poland", "portugal", "sweden", "switzerland", "south korea", "korea", "philippines",
-            "costa rica", "argentina", "colombia", "united arab emirates", "uae",
-            // US states
+    /*
+     * Places too coarse to say two postings are in the same location, unless nothing finer is given. Three levels,
+     * because when a posting names no city its most specific region is what identifies it: "Florida, USA, Remote"
+     * and "Texas, USA, Remote" share "us" and "remote" but are different openings.
+     */
+
+    /** Cross-country areas and "anywhere" words. */
+    private static final Set<String> MACRO_REGIONS = Set.of(
+            "remote", "anywhere", "global", "worldwide", "eu", "europe", "emea", "apac", "latam", "americas",
+            "north america", "asia");
+
+    private static final Set<String> COUNTRIES = Set.of(
+            "us", "uk", "canada", "germany", "france", "india", "ireland", "japan", "australia", "singapore",
+            "netherlands", "spain", "italy", "brazil", "mexico", "china", "malaysia", "israel", "poland", "portugal",
+            "sweden", "switzerland", "south korea", "korea", "philippines", "costa rica", "argentina", "colombia",
+            "united arab emirates", "uae");
+
+    /** US states and Canadian provinces (two-letter codes are handled by length). */
+    private static final Set<String> STATES = Set.of(
             "alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut", "delaware",
             "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa", "kansas", "kentucky",
             "louisiana", "maine", "maryland", "massachusetts", "michigan", "minnesota", "mississippi", "missouri",
@@ -64,7 +77,6 @@ public final class LocationNormalizer {
             "north dakota", "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina",
             "south dakota", "tennessee", "texas", "utah", "vermont", "virginia", "west virginia", "wisconsin",
             "wyoming", "district of columbia",
-            // Canadian provinces
             "alberta", "british columbia", "manitoba", "new brunswick", "newfoundland and labrador", "nova scotia",
             "ontario", "prince edward island", "quebec", "saskatchewan");
 
@@ -83,20 +95,40 @@ public final class LocationNormalizer {
                 if (places.isEmpty()) {
                     continue;
                 }
-                boolean endsInRegion = isRegion(places.getLast());
+                boolean endsInRegion = regionLevel(places.getLast()) > 0;
+                boolean sawCity = false;
                 for (String segment : places) {
-                    if (isRegion(segment)) {
-                        regional.add(segment);
-                    } else {
+                    if (regionLevel(segment) == 0) {
                         specific.add(segment);
+                        sawCity = true;
                         if (endsInRegion) {
                             break; // "City, State, Country": everything after the city is region-level
                         }
                     }
                 }
+                if (!sawCity) {
+                    regional.addAll(regionalKeys(places));
+                }
             }
         }
         return specific.isEmpty() ? regional : specific;
+    }
+
+    /**
+     * Keys for a location string that names no city: only its most specific region level ("Florida, USA, Remote"
+     * gives "florida", not "us" or "remote"). A remote posting is keyed apart from an office posting in the same
+     * region ("Remote - India" is not "India"), unless "remote" is all it says.
+     */
+    private static Set<String> regionalKeys(List<String> places) {
+        int finest = places.stream().mapToInt(LocationNormalizer::regionLevel).max().orElse(0);
+        boolean remote = places.contains("remote");
+        Set<String> keys = new LinkedHashSet<>();
+        for (String segment : places) {
+            if (regionLevel(segment) == finest) {
+                keys.add(remote && !segment.equals("remote") ? "remote " + segment : segment);
+            }
+        }
+        return keys;
     }
 
     /**
@@ -128,8 +160,21 @@ public final class LocationNormalizer {
         return out;
     }
 
-    /** Two-letter segments are almost always state or country codes ("NY", "CA", "GB"). */
-    private static boolean isRegion(String segment) {
-        return segment.length() <= 2 || REGIONS.contains(segment);
+    /**
+     * 0 for a specific place (a city), otherwise how specific the region is: 3 state or province, 2 country,
+     * 1 macro region. Two-letter segments are almost always state or country codes ("NY", "CA", "GB"); they
+     * count as states, except the aliased "us" and "uk".
+     */
+    private static int regionLevel(String segment) {
+        if (MACRO_REGIONS.contains(segment)) {
+            return 1;
+        }
+        if (COUNTRIES.contains(segment)) {
+            return 2;
+        }
+        if (STATES.contains(segment) || segment.length() <= 2) {
+            return 3;
+        }
+        return 0;
     }
 }

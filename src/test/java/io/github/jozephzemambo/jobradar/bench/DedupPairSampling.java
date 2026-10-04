@@ -26,7 +26,7 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 /**
  * Draws a dedup labeling sample from a crawl database:
  * {@code ./mvnw test -Dtest=DedupPairSampling -Dbench=true [-Dbench.db=jdbc:h2:...] [-Dbench.threshold=0.85]
- * [-Dbench.seed=N] [-Dbench.exclude=bench/dedup/labeled-pairs.csv] [-Dbench.out=bench/dedup/x.csv]}.
+ * [-Dbench.seed=N] [-Dbench.exclude=a.csv,b.csv] [-Dbench.out=bench/dedup/x.csv]}.
  * Seeded, so the same database and options give the same sample. {@code bench.exclude} keeps pairs already in
  * another file out of the sample, for a validation set disjoint from the development set.
  */
@@ -58,13 +58,15 @@ class DedupPairSampling {
             }
         }
 
-        double threshold = Double.parseDouble(System.getProperty("bench.threshold", "0.8"));
+        double threshold = Double.parseDouble(System.getProperty("bench.threshold", "1.0"));
         long seed = Long.parseLong(System.getProperty("bench.seed", Long.toString(SEED)));
         Set<Set<PostingKey>> excluded = new HashSet<>();
         String exclude = System.getProperty("bench.exclude");
         if (exclude != null) {
-            for (PairCsv.Row row : PairCsv.read(Files.readString(Path.of(exclude)))) {
-                excluded.add(Set.of(row.a().key(), row.b().key()));
+            for (String file : exclude.split(",")) {
+                for (PairCsv.Row row : PairCsv.read(Files.readString(Path.of(file.strip())))) {
+                    excluded.add(Set.of(row.a().key(), row.b().key()));
+                }
             }
         }
         DedupResult flagged = new Deduplicator(threshold).dedupe(open);

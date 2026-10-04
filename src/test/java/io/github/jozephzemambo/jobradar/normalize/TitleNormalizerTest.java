@@ -47,4 +47,26 @@ class TitleNormalizerTest {
     void levelTokens(String title, String expected) {
         assertThat(String.join(",", TitleNormalizer.levelTokens(title))).isEqualTo(expected);
     }
+
+    @ParameterizedTest(name = "\"{0}\" = \"{1}\" -> {2}")
+    @CsvSource(delimiter = '|', textBlock = """
+            Engineer, Software Development Engineering (Embedded) | Software Development Engineering (Embedded) | true
+            Project Manager Assistant - Stage (F/H/NB)             | Project Manager Assistant - Stage           | true
+            Director of Sales and Marketing                        | Sales & Marketing Director                  | true
+            Systems Engineer                                       | System Engineer                             | true
+            Creator Project Manager Assistant                      | Project Manager Assistant                   | false
+            Enterprise Sales Director - Majors, Healthcare         | Enterprise Sales Director - Majors          | false
+            """)
+    void signatureTokens(String a, String b, boolean same) {
+        assertThat(TitleNormalizer.signatureTokens(a).equals(TitleNormalizer.signatureTokens(b))).isEqualTo(same);
+    }
+
+    @Test
+    void stemmingIsConservative() {
+        assertThat(TitleNormalizer.stem("engineering")).isEqualTo("engineer");
+        assertThat(TitleNormalizer.stem("analytics")).isEqualTo("analytic");
+        assertThat(TitleNormalizer.stem("business")).isEqualTo("business");
+        assertThat(TitleNormalizer.stem("campus")).isEqualTo("campus");
+        assertThat(TitleNormalizer.stem("king")).isEqualTo("king");
+    }
 }

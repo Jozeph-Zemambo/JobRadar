@@ -35,8 +35,9 @@ class DedupEvaluation {
                     100 * point.precision(), 100 * point.recall()));
         }
 
-        out.append("\nPairs the current rule (threshold 0.85) gets wrong:\n");
-        Deduplicator rule = new Deduplicator(0.85);
+        double threshold = Double.parseDouble(System.getProperty("bench.threshold", "1.0"));
+        out.append(String.format(Locale.ROOT, "%nPairs the current rule (threshold %.2f) gets wrong:%n", threshold));
+        Deduplicator rule = new Deduplicator(threshold);
         for (PairCsv.Row row : rows) {
             boolean predicted = DedupEvaluator.predicts(rule, row);
             if (row.duplicate() != null && predicted != row.duplicate()) {

@@ -44,6 +44,14 @@ public final class TitleNormalizer {
      */
     private static final Pattern REQ_ID = Pattern.compile("[a-z]{1,3}\\d{4,}");
 
+    /**
+     * Words that never distinguish one role from another: English and French function words seen in real titles,
+     * and "nb" from gender markers like "(F/H/NB)" (the single letters are dropped by length).
+     */
+    private static final Set<String> STOP_WORDS = Set.of(
+            "and", "or", "of", "the", "for", "a", "an", "in", "at", "to", "with", "on",
+            "de", "la", "le", "les", "des", "du", "en", "et", "nb");
+
     private TitleNormalizer() {
     }
 
@@ -78,5 +86,34 @@ public final class TitleNormalizer {
         Set<String> levels = new LinkedHashSet<>(tokens(title));
         levels.retainAll(LEVEL_WORDS);
         return levels;
+    }
+
+    /**
+     * The tokens that identify a role, for deciding whether two titles name the same job: stop words and stray
+     * single letters ("F/H/NB") dropped, and a light suffix stem so "Engineering" equals "Engineer" and "Systems"
+     * equals "System". Requisition ids are already gone (see {@link #normalize}).
+     *
+     * <p>Duplicate detection requires these sets to be <em>equal</em>: on 200 labeled pairs, titles differing by
+     * even one remaining word ("..., Healthcare", "Creator ...") were almost always different openings.
+     */
+    public static Set<String> signatureTokens(String title) {
+        Set<String> signature = new LinkedHashSet<>();
+        for (String token : tokens(title)) {
+            if (STOP_WORDS.contains(token) || (token.length() == 1 && Character.isLetter(token.charAt(0)))) {
+                continue;
+            }
+            signature.add(stem(token));
+        }
+        return signature;
+    }
+
+    static String stem(String token) {
+        if (token.length() > 5 && token.endsWith("ing")) {
+            return token.substring(0, token.length() - 3);
+        }
+        if (token.length() > 3 && token.endsWith("s") && !token.endsWith("ss") && !token.endsWith("us")) {
+            return token.substring(0, token.length() - 1);
+        }
+        return token;
     }
 }
