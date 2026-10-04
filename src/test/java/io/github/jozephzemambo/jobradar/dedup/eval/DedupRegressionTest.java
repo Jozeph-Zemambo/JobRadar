@@ -30,6 +30,20 @@ class DedupRegressionTest {
     }
 
     @Test
+    void ruleIsNoWorseOnTheSecondHeldOutSample() throws Exception {
+        List<PairCsv.Row> rows = PairCsv.read(Files.readString(Path.of("bench/dedup/holdout2-labeled.csv")));
+        assertThat(rows).hasSize(100).allSatisfy(r -> assertThat(r.duplicate()).isNotNull());
+
+        DedupEvaluator.Confusion confusion = DedupEvaluator.weighted(rows, new Deduplicator(PRODUCTION_THRESHOLD));
+        DedupEvaluator.PrecisionEstimate drawn = DedupEvaluator.precisionOfPredictedStratum(rows);
+
+        // Measured 2026-10-04 on a sample drawn after this rule was committed (see docs/BENCHMARKS.md).
+        assertThat(drawn.correct()).isEqualTo(47);
+        assertThat(confusion.precision()).isGreaterThanOrEqualTo(0.94 - 1e-9);
+        assertThat(confusion.recall()).isGreaterThanOrEqualTo(0.794 - 1e-3);
+    }
+
+    @Test
     void developmentSampleKeepsItsPreRegisteredResult() throws Exception {
         List<PairCsv.Row> rows = PairCsv.read(Files.readString(Path.of("bench/dedup/labeled-pairs.csv")));
 

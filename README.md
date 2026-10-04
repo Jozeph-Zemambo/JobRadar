@@ -14,9 +14,9 @@ Java 21, Spring Boot 4.1, Spring Data JPA (H2 or Postgres), Flyway, JUnit 5, Moc
 | Full crawl | 51 boards, ~11,770 postings, 84-94 s, at 2 requests/s per host |
 | Ingest speedup | virtual threads 2.7x faster than sequential with rate limiting, 9.9x without (45 boards) |
 | Profiling win | re-sync persistence 14.6 s -> 3.2 s after a JFR profile |
-| Dedup precision | 86.0% (Wilson 95%: 73.8-93.0%) on a held-out, LLM-labeled 100-pair sample |
+| Dedup precision | 94.0% (Wilson 95%: 83.8-97.9%) on a held-out, LLM-labeled 100-pair sample (78% -> 86% -> 94% over three rounds) |
 | API (H2, c=10) | ranked list p50 2 ms / p95 5 ms; cached stats p50 under 1 ms |
-| Tests | 250, 96.7% line / 87.6% branch coverage (CI gate 90% / 80%) |
+| Tests | 265, 96.8% line / 88.1% branch coverage (CI gate 90% / 80%) |
 
 How each number was measured, with the raw data, is in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
@@ -56,8 +56,9 @@ flowchart LR
    against a profile. It returns an explainable breakdown: the skills matched, the skills missing, and the title
    signal. Tokenization keeps `C++`, `C#` and `Node.js` intact and doesn't read "go-to-market" as Go.
 5. **Dedup.** Exact match on the canonical URL, then a fuzzy match within each company. The fuzzy match requires
-   all of: title-token Jaccard of at least 0.85, the same level words (Senior, Staff, II), overlapping locations,
-   and departments that don't conflict. Clustering is leader-based (no transitive chains) and links duplicates
+   all of: identical title signatures (tokens without stop words, requisition ids or gender markers, lightly
+   stemmed), the same level words (Senior, Staff, II), overlapping locations (a city, or for city-less postings
+   the most specific region, with remote and office kept apart), and departments that don't conflict. Clustering is leader-based (no transitive chains) and links duplicates
    rather than deleting them.
 6. **Read side.** Composable JPA Specifications for filters, RFC 9457 problem responses, cached stats evicted by an
    `IngestCompletedEvent`, and an NDJSON export streamed in batches.
@@ -155,7 +156,9 @@ Benchmarks replay recorded payloads instead of re-hitting the APIs.
 ## Limitations
 
 - The skills dictionary is hand-written. A skill it doesn't list is invisible to scoring and stats.
-- Dedup precision on the held-out sample is 86%. The remaining errors are remote postings in different regions,
-  and long titles that differ by one specialization word (see BENCHMARKS).
+- Dedup precision on the latest held-out sample is 94%. The remaining errors are titles with the same words but
+  different roles ("Senior Manager, Customer Success" vs. "Senior Customer Success Manager"), and truncated Workday
+  list titles. It also misses some duplicates whose shared location is only stated in the description (see
+  BENCHMARKS).
 - Workday's default listing order isn't strictly newest-first, so with detail calls capped, some descriptions fill
   in over several crawls.

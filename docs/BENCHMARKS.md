@@ -99,41 +99,67 @@ stratified sample of same-company pairs from the real crawl (11,773 open posting
 
 Labels came from **an LLM labeling blind**. It was given a shuffled file with the rule's output and the stratum
 removed, plus a written rubric: same role, level, specialization and employment type, and an overlapping location.
-A second LLM pass re-checked 15 labels, including every label that disagreed with the rule and every
-low-confidence one, and agreed with all 15. The rubric and the labels with a one-line reason for each are in the
-CSVs. These are **LLM-labeled** samples, not hand-labeled ones.
+The labels, each with a one-line reason, are in the CSVs. These are **LLM-labeled** samples, not hand-labeled ones.
 
 ### Results
 
-| Sample | Rule | Precision | Wilson 95% | Source |
-|---|---|---|---|---|
-| Development (100 pairs) | original: threshold 0.8 | 39/50 = **78.0%** | 64.8-87.2% | [`labeled-pairs.csv`](../bench/dedup/labeled-pairs.csv) |
-| Validation (100 different pairs) | final: threshold 0.85 + fixes below | 43/50 = **86.0%** | 73.8-93.0% | [`validation-labeled.csv`](../bench/dedup/validation-labeled.csv) |
+Three rounds. Each sample was drawn only after the rule it measures had been committed, and each was disjoint from
+every earlier sample.
 
-The development sample's false positives traced to fixable causes:
+| Sample | Rule measured | Precision | Wilson 95% | Source |
+|---|---|---|---|---|
+| 1. Development (100 pairs) | original: token Jaccard >= 0.8 | 39/50 = **78.0%** | 64.8-87.2% | [`labeled-pairs.csv`](../bench/dedup/labeled-pairs.csv) |
+| 2. Validation (100 pairs) | round-1 fixes, Jaccard >= 0.85 | 43/50 = **86.0%** | 73.8-93.0% | [`validation-labeled.csv`](../bench/dedup/validation-labeled.csv) |
+| 3. Held-out (100 pairs) | round-2 fixes, identical title signatures | 47/50 = **94.0%** | 83.8-97.9% | [`holdout2-labeled.csv`](../bench/dedup/holdout2-labeled.csv) |
+
+**Round 1** (from sample 1's false positives):
 - **State names treated as cities.** "Mountain View, California" matched "San Francisco, California" on
   "california".
 - **"Hybrid" treated as a place.**
 - **The 0.8 threshold.** 7 of the 9 predicted pairs at exactly 0.8 were distinct roles: a five-word title plus one
-  specialization word.
+  specialization word. Raised to 0.85.
 - **Requisition ids inside titles.**
 
-After those fixes the rule was frozen. A **disjoint** validation sample was then drawn and labeled the same way, so
-the 86.0% figure is not tuned on its own labels. `DedupRegressionTest` fails the build if the rule gets worse on
-those labels.
+**Round 2** (from sample 2's false positives, which had two causes):
+- **Remote postings in different regions overlapped** ("Florida, USA, Remote" vs. "Texas, USA, Remote" on "us"
+  and "remote"; 4 of 7). Regions now have levels (state/province > country > "remote", "EMEA"), and a location
+  without a city is keyed by its most specific region only. A remote posting is keyed apart from an office
+  posting in the same region.
+- **One specialization word in a long title still cleared 0.85** ("... Autonomous Pilot Integration - Weapons";
+  3 of 7). Across samples 1 and 2, 11 of the 14 predicted pairs with non-identical titles were distinct roles. Two
+  of the three duplicates differed only by a requisition id or "Engineer" vs. "Engineering". Dedup now requires
+  identical **title signatures**: tokens with stop words, stray letters and gender markers ("F/H/NB") removed, and
+  a light suffix stem.
 
-**Recall:** none of the 100 near-miss pairs across both samples was labeled a duplicate. With 50 near-miss pairs
-per sample out of about 38,000, that is too few to put a meaningful number on recall, so none is claimed.
+Samples 1 and 2 are development data now. On them the round-2 rule scores 97.4% and 100% weighted precision, but
+those numbers are in-sample. Sample 3 is the honest measure. `DedupRegressionTest` fails the build if the rule
+gets worse on samples 2 or 3.
 
-**Known failure modes**, from the validation false positives (left unfixed, so the validation stays held out):
-1. Remote postings in different regions ("Florida, USA, Remote" vs. "Texas, USA, Remote") overlap on the
-   region-level keys. This is 4 of the 7 false positives.
-2. One specialization word in a long title ("... Autonomous Pilot Integration - Weapons") still clears 0.85.
-   This is the other 3.
+**Recall.** Samples 1 and 2 had no duplicates among their 100 near-miss pairs. Sample 3 had one: the same
+healthcare FDE role in Philadelphia and Chicago, whose descriptions both allow remote work across the Central and
+Eastern time zones, which the location rule can't see. Weighting it by its stratum gives a recall estimate of
+79.4%, but that rests on a single pair (weight 217), so treat it as "most duplicates are caught, not all", not as a
+precise figure.
 
-**On the real crawl** the final rule links 392 of 11,773 open postings (3.3%) as duplicates, and none of them by
-exact URL: each board gives every posting its own URL. The count was 393 before a later fix stopped "On-site"
-being read as the place "site"; precision on the validation sample is unchanged at 86.0%.
+**Remaining failure modes** (sample 3's false positives):
+1. Same words, different role. "Senior Enterprise Customer Success Manager" (an individual contributor) and
+   "Senior Manager, Enterprise Customer Success" (a people manager) have identical token sets; word order carries
+   the meaning.
+2. A truncated Workday list title. The URL slug of one posting reads "Analytics Sr Software Engineer", but its
+   listed title doesn't.
+3. Both postings located only as "Distributed". This is ambiguous, and the rubric defaults ambiguous pairs to
+   distinct.
+
+**Caveat on the unit.** Precision is measured over *pairs*, so a role reposted many times (several Western Digital
+technician reqs) contributes many pairs. All three samples share this design, so they are comparable to each
+other.
+
+**Labeling.** All three samples were labeled blind by an LLM against the same written rubric. In each round, a
+second LLM pass re-checked 15 labels, including every disputed and low-confidence one. In round 3 it agreed with
+all 15, one of them an ambiguous case the rubric resolves as distinct.
+
+**On the real crawl** the current rule links 352 of 11,773 open postings (3.0%) as duplicates (392 under the round-1
+rule), none of them by exact URL: each board gives every posting its own URL.
 
 ## 4. API latency
 
@@ -175,12 +201,12 @@ behind a 2-vCPU VM and port forwarding. The before/after rows on the same databa
 
 ## 5. Tests and coverage
 
-250 tests (`./mvnw verify`) cover:
+265 tests (`./mvnw verify`) cover:
 - unit and parameterized tests;
 - WireMock contract tests built from recorded real responses of all five ATSes;
 - `@DataJpaTest` and `@WebMvcTest` slices;
 - one end-to-end `@SpringBootTest`;
 - a Testcontainers Postgres test.
 
-JaCoCo: **96.7% line and 87.6% branch coverage** (1,636 / 1,691 lines), with no exclusions. The build fails below
+JaCoCo: **96.8% line and 88.1% branch coverage** (1,668 / 1,723 lines), with no exclusions. The build fails below
 90% / 80%.
