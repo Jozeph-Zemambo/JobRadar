@@ -9,8 +9,8 @@ public class JobRadarApplication {
 
     public static void main(String[] args) {
         ConfigurableApplicationContext context = SpringApplication.run(JobRadarApplication.class, args);
-        // In one-shot crawl mode, exit with CrawlRunner's code so schedulers can detect a failed crawl.
-        if (context.getEnvironment().matchesProfiles("crawl")) {
+        // One-shot modes exit with their runner's code so schedulers and scripts can detect failure.
+        if (context.getEnvironment().matchesProfiles("crawl | export")) {
             System.exit(SpringApplication.exit(context));
         }
     }

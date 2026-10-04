@@ -1,0 +1,6 @@
+# One-shot export: no web server; ExportRunner writes open, non-duplicate postings to a JSON file and exits.
+# Usage: java -jar jobradar.jar --spring.profiles.active=export [--jobradar.export.file=out.json]
+#        [--jobradar.export.min-score=0.5] [--jobradar.export.format=NDJSON]
+spring:
+  main:
+    web-application-type: none

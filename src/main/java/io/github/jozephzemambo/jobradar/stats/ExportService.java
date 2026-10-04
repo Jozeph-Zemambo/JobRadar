@@ -26,6 +26,12 @@ public class ExportService {
 
     static final int BATCH = 500;
 
+    /** Output shape: one JSON object per line (streams well), or a single JSON array (easy to load whole). */
+    public enum Format {
+        NDJSON,
+        JSON_ARRAY
+    }
+
     /** One exported line: the summary plus the plain-text description. */
     public record ExportedPosting(PostingViews.Summary posting, String description, String compensation) {
     }
@@ -38,8 +44,13 @@ public class ExportService {
         this.mapper = mapper;
     }
 
-    /** @return number of postings written */
+    /** NDJSON export; see {@link #export(Double, Instant, OutputStream, Format)}. */
     public long export(Double minScore, Instant since, OutputStream out) throws IOException {
+        return export(minScore, since, out, Format.NDJSON);
+    }
+
+    /** @return number of postings written */
+    public long export(Double minScore, Instant since, OutputStream out, Format format) throws IOException {
         Specification<PostingEntity> spec = Specification.allOf(List.of(
                 PostingSpecifications.isOpen(), PostingSpecifications.notDuplicate()));
         if (minScore != null) {
@@ -47,6 +58,10 @@ public class ExportService {
         }
         if (since != null) {
             spec = spec.and(PostingSpecifications.firstSeenSince(since));
+        }
+        boolean array = format == Format.JSON_ARRAY;
+        if (array) {
+            out.write('[');
         }
         long written = 0;
         long lastId = 0;
@@ -58,8 +73,16 @@ public class ExportService {
             for (PostingEntity e : batch) {
                 ExportedPosting line = new ExportedPosting(PostingViews.Summary.of(e), e.getDescription(),
                         e.getCompensation());
+                if (array) {
+                    out.write(written == 0 ? '\n' : ',');
+                    if (written > 0) {
+                        out.write('\n');
+                    }
+                }
                 out.write(mapper.writeValueAsString(line).getBytes(StandardCharsets.UTF_8));
-                out.write('\n');
+                if (!array) {
+                    out.write('\n');
+                }
                 written++;
                 lastId = e.getId();
             }
@@ -67,6 +90,10 @@ public class ExportService {
             if (batch.size() < BATCH) {
                 break;
             }
+        }
+        if (array) {
+            out.write("\n]\n".getBytes(StandardCharsets.UTF_8));
+            out.flush();
         }
         return written;
     }

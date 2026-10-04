@@ -158,6 +158,22 @@ class StatsServiceTest {
     }
 
     @Test
+    void exportAsJsonArrayIsOneValidDocument() throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        long written = export.export(null, null, out, ExportService.Format.JSON_ARRAY);
+
+        var parsed = JsonMapper.builder().build().readTree(out.toString(StandardCharsets.UTF_8));
+        assertThat(parsed.isArray()).isTrue();
+        assertThat(parsed.size()).isEqualTo((int) written).isEqualTo(2);
+        assertThat(parsed.get(0).get("posting").get("title").asText()).isEqualTo("Java Developer");
+
+        ByteArrayOutputStream empty = new ByteArrayOutputStream();
+        export.export(0.99, null, empty, ExportService.Format.JSON_ARRAY);
+        assertThat(JsonMapper.builder().build().readTree(empty.toString(StandardCharsets.UTF_8)).size()).isZero();
+    }
+
+    @Test
     void exportUsesKeysetSoAConcurrentChangeCannotSkipRows() throws Exception {
         List<Posting> many = new java.util.ArrayList<>();
         for (int i = 0; i < ExportService.BATCH + 100; i++) {

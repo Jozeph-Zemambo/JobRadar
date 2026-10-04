@@ -126,8 +126,19 @@ java -jar target/jobradar-0.0.1-SNAPSHOT.jar --spring.profiles.active=crawl
 ```
 
 On Windows, `scripts/windows/install-daily-crawl.ps1 -JarPath ... -DataDir ... -At 07:00` registers a per-user
-daily scheduled task. It runs late if the machine was asleep and never runs elevated.
-`uninstall-daily-crawl.ps1` removes it. On an always-on server, set `jobradar.schedule.enabled=true` instead.
+daily scheduled task. It runs late if the machine was asleep and never runs elevated. It also checks for Java 21+
+and pins that `java.exe` for the task. `uninstall-daily-crawl.ps1` removes it. On an always-on server, set
+`jobradar.schedule.enabled=true` instead.
+
+**One-shot JSON export.** The `export` profile writes open, non-duplicate postings, with scores and matched
+skills, to a JSON file and exits:
+
+```bash
+java -jar target/jobradar-0.0.1-SNAPSHOT.jar --spring.profiles.active=export \
+  --jobradar.export.file=exports/postings.json --jobradar.export.min-score=0.5
+```
+
+On Windows: `scripts\windows\export-postings.cmd <data dir> [min score]`.
 
 **Boards** are listed in `src/main/resources/companies.yml`. Boards move between ATSes, so check them with
 `bench/verify-companies.sh`.
