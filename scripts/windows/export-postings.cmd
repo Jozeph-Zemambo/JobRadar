@@ -1,8 +1,9 @@
 @echo off
-rem Writes every open, non-duplicate posting (with score and matched skills) to %1\exports\postings.json,
-rem a single JSON array. Safe to run while the API or a crawl uses the database (H2 AUTO_SERVER mode).
-rem Arguments: %1 = data directory set up by install-daily-crawl.ps1, %2 = optional minimum score (0-1)
-rem Uses JOBRADAR_JAVA and JOBRADAR_JAR from %1\jobradar-env.cmd.
+rem Writes every open, non-duplicate posting (with score and matched skills) to exports\postings.json in
+rem the data directory, as one JSON array. Safe to run while the API or a crawl uses the database.
+rem Arguments: 1 = data directory set up by install-daily-crawl.ps1, 2 = optional minimum score (0-1)
+rem Uses JOBRADAR_JAVA and JOBRADAR_JAR from jobradar-env.cmd in the data directory.
+rem Note: cmd expands percent signs even inside rem lines, so these comments must not contain any.
 
 setlocal
 if "%~1"=="" goto usage

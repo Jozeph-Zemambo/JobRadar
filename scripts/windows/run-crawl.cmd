@@ -1,11 +1,12 @@
 @echo off
 rem Runs one JobRadar crawl and appends its output to a dated log file.
 rem Called by the scheduled task that install-daily-crawl.ps1 creates; can also be run by hand.
-rem Arguments: %1 = path to jobradar.jar, %2 = data directory (database, logs, optional profile.yml)
-rem Java: JOBRADAR_JAVA from %2\jobradar-env.cmd (written by the installer), else "java" on PATH.
+rem Arguments: 1 = path to jobradar.jar, 2 = data directory (database, logs, optional profile.yml)
+rem Java: JOBRADAR_JAVA from jobradar-env.cmd in the data directory (written by the installer), else "java".
+rem Note: cmd expands percent signs even inside rem lines, so these comments must not contain any.
 
 setlocal
-rem %~f makes the paths absolute now, before the "cd" below would change what a relative path means.
+rem Make both paths absolute now, before the "cd" below would change what a relative path means.
 set "JAR=%~f1"
 set "DATA=%~f2"
 if "%~1"=="" goto usage
